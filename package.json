@@ -1,0 +1,10 @@
+{
+  "type": "module",
+  "scripts": {
+    "archive": "node --env-file-if-exists=.env .",
+    "dev": "node --env-file-if-exists=.env index.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.40.0"
+  }
+}
