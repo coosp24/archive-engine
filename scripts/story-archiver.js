@@ -1,13 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { printLine } from "../util/helpers.js";
 import { getPage, getDataUsageMB } from "../util/context.js";
+import { recordStory } from "../api/story.js";
 
 /* ===================== PAGE SCRIPTS ===================== */
 
 // Loaded into the page before coomeet's own code, in this order: owner.js and
-// network.js are cooscrap-tool's, unchanged — they listen to everything the
-// app downloads and remember each story file's owner — and story.js reads the
-// story on screen and presses "next".
+// network.js are cooscrap-tool's — they listen to everything the app
+// downloads and remember each story file's owner; owner.js also keeps the
+// story's publication time — and story.js reads the story on screen and
+// presses "next".
 const PAGE_SCRIPTS = ["owner.js", "network.js", "story.js"];
 
 export async function injectPageScripts(page) {
@@ -75,6 +77,9 @@ export default async function archive({ limit = null } = {}) {
   const seen = new Set();
   let count = 0;
   let missingOwner = 0;
+  let failed = 0;
+  // How many of each were new to the archive this run.
+  const added = { model: 0, name: 0, avatar: 0, story: 0 };
 
   let story = await waitForStory(null, FIRST_STORY_TIMEOUT);
   if (!story) {
@@ -95,7 +100,31 @@ export default async function archive({ limit = null } = {}) {
     printLine();
     console.log(`🎬 Story ${count}`);
     console.log(`👤 Model id:  ${story.id ?? "unknown"}`);
+    console.log(`🏷️  Name:      ${story.name ?? "unknown"}`);
+    console.log(`🖼️  Avatar:    ${story.avatar ?? "unknown"}`);
+    console.log(
+      `📅 Published: ${story.published ? new Date(story.published).toISOString() : "unknown"}`,
+    );
     console.log(`🎞️  Video src: ${story.src}`);
+    console.log(`🆔 Story id:  ${story.storyId ?? "unknown"}`);
+    console.log(`🖼️  Preview:   ${story.preview ?? "unknown"}`);
+
+    // A story without her id can't be filed under anyone, nor one without
+    // its own id (the stories table's key), so those are only logged.
+    if (!story.id || !story.storyId) {
+      failed++;
+      console.warn("⚠️ Not saved — model id or story id unknown");
+    } else {
+      try {
+        const isNew = await recordStory(story);
+        for (const kind of Object.keys(added)) if (isNew[kind]) added[kind]++;
+        const news = Object.keys(added).filter((kind) => isNew[kind]);
+        console.log(news.length ? `✅ Saved — new ${news.join(", ")}` : "✅ Saved — nothing new");
+      } catch (error) {
+        failed++;
+        console.warn(error.message);
+      }
+    }
 
     if (limit && count >= limit) break;
 
@@ -113,6 +142,11 @@ export default async function archive({ limit = null } = {}) {
   printLine();
   console.log(`🎞️  Stories found:   ${count}`);
   console.log(`❓ Owner unknown:   ${missingOwner}`);
+  console.log(`🆕 New models:      ${added.model}`);
+  console.log(`🆕 New stories:     ${added.story}`);
+  console.log(`🆕 New names:       ${added.name}`);
+  console.log(`🆕 New avatars:     ${added.avatar}`);
+  console.log(`⚠️  Failed to save:  ${failed}`);
   console.log(`📡 Data consumed:   ${getDataUsageMB()} MB`);
   return count;
 }

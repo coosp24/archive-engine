@@ -19,6 +19,7 @@
   const SLIDE =
     '#application-wrapper > div.coomeet-chat > div.stories > div.stories-viewer > div.stories-viewer__slider > div[data-name="current-story"]';
   const VIDEO = `${SLIDE} > div > video`;
+  const NAME = `${SLIDE} > div > div.stories-ui > div.user-info > div.user-info__content > div.user-info__content--name > div.user-info__content--name__label`;
   // The slide's "next story" button, as in cooscrap-tool's story-keys.js.
   // It's coomeet's dislike button (data-name="story-dislike"), which moves on
   // to the next story; the site has no plain "next".
@@ -63,13 +64,24 @@
     return null;
   };
 
-  // { src, id } for the story on screen; id is null while it's unknown.
+  // { src, id, name, avatar, published, storyId, preview } for the story on
+  // screen; all but src are null while they're unknown. `published` is epoch
+  // ms, from the story's data — the screen only says "today" or "yesterday".
+  // `avatar` is her profile picture, `storyId` coomeet's id for the story and
+  // `preview` its still image, all from the same data.
   const currentStory = () => {
     const video = document.querySelector(VIDEO);
     const src = video?.currentSrc || video?.src || null;
-    if (!src) return { src: null, id: null };
-    const owner = ownerOf(src) ?? fromState(video, fileKey(src));
-    return { src, id: owner?.id ?? null };
+    const owner = src ? (ownerOf(src) ?? fromState(video, fileKey(src))) : null;
+    return {
+      src,
+      id: owner?.id ?? null,
+      name: src ? document.querySelector(NAME)?.textContent.trim() || null : null,
+      avatar: owner?.avatar ?? null,
+      published: owner?.published ?? null,
+      storyId: owner?.storyId ?? null,
+      preview: owner?.preview ?? null,
+    };
   };
 
   // A full press — pointer and mouse down and up, then click — since some of

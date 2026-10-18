@@ -5,6 +5,7 @@
     "dev": "node --env-file-if-exists=.env index.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "puppeteer-core": "^24.40.0"
   }
 }

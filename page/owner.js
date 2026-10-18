@@ -52,8 +52,32 @@
     return /^[\w.-]+$/.test(key) ? CDN + key : null;
   };
 
-  // Who an object names, with whatever else it says about her.
-  const owner = (id, obj) => ({ id: String(id), name: nameIn(obj), avatar: avatarIn(obj) });
+  // When the story was published, as epoch ms. Not in cooscrap-tool: coomeet
+  // sends it on the story as `publicationTime`, in epoch seconds.
+  const publishedIn = (obj) => {
+    const seconds = Number(obj.publicationTime);
+    return seconds > 0 ? seconds * 1000 : null;
+  };
+
+  // The story's own id and preview image. Not in cooscrap-tool: a story in
+  // coomeet's feed reads { media: { webm, preview, … }, womanId, id }, where
+  // `id` is the story's (35047417), never hers, and preview is a CDN key.
+  const storyIdIn = (obj) =>
+    Number.isSafeInteger(obj.id) && !isModelId(obj.id) ? String(obj.id) : null;
+  const previewIn = (obj) => {
+    const key = obj.media?.preview;
+    return typeof key === "string" && /^[\w.-]+$/.test(key) ? CDN + key : null;
+  };
+
+  // Who an object names, with whatever else it says about her and her story.
+  const owner = (id, obj) => ({
+    id: String(id),
+    name: nameIn(obj),
+    avatar: avatarIn(obj),
+    published: publishedIn(obj),
+    storyId: storyIdIn(obj),
+    preview: previewIn(obj),
+  });
 
   // The video's file name without its extension: the part that's the same in
   // every place the story is mentioned, whatever host or query is around it.
@@ -73,7 +97,15 @@
         for (const inner of ["id", "uid", "userId", "user_id"]) {
           if (isModelId(value[inner])) {
             const her = owner(value[inner], value);
-            return { ...her, name: her.name ?? nameIn(obj), avatar: her.avatar ?? avatarIn(obj) };
+            return {
+              ...her,
+              name: her.name ?? nameIn(obj),
+              avatar: her.avatar ?? avatarIn(obj),
+              published: her.published ?? publishedIn(obj),
+              // `her` is the person object, so the story's are on `obj`.
+              storyId: storyIdIn(obj),
+              preview: previewIn(obj),
+            };
           }
         }
       }
