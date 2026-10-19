@@ -85,13 +85,16 @@ async function main() {
     await click(page, ".terms-actions button, .terms-actions div");
 
     // A subscribed account gets the feed 20 stories a batch; a guest (and an
-    // account without a subscription) 5 a batch.
-    if (guest) {
+    // account without a subscription) 5 a batch. With no primary account in
+    // the accounts table, the run goes ahead as a guest.
+    const account = guest ? null : await getPrimaryAccount();
+    if (account) {
+      console.log(`🔑 Logging in as ${account.email}`);
+      await login(account.email, account.password);
+    } else if (guest) {
       console.log("👤 Running as a guest — not logged in");
     } else {
-      const { email, password } = await getPrimaryAccount();
-      console.log(`🔑 Logging in as ${email}`);
-      await login(email, password);
+      console.log("👤 No primary account in the accounts table — running as a guest");
     }
 
     // The slider method needs the stories page. The feed method reads from

@@ -7,6 +7,10 @@
 --   insert into public.accounts (email, password) values ('…', '…');
 --   update public.accounts set is_primary = (email = '…');
 --
+-- With no row marked primary, runs go ahead as a guest (logged out):
+--
+--   update public.accounts set is_primary = false;
+--
 -- No --guest run reads this table.
 
 /* ===================== TABLE ===================== */
