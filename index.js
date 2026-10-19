@@ -38,6 +38,12 @@ const limit = Number(args.limit) || null;
 const slider = args.slider === true;
 const reloadEvery = Number(args["reload-every"]) || undefined;
 
+// --guest runs logged out: no account needed. The feed method still reads
+// the whole feed — coomeet's ~10-story guest limit is only enforced by its
+// pages — but in batches of 5 instead of 20, so it takes ~4× longer. The
+// slider method, which goes through those pages, stops at the limit.
+const guest = args.guest === true;
+
 /* ===================== MAIN ===================== */
 
 async function launchBrowser(attempts = 2) {
@@ -77,18 +83,22 @@ async function main() {
     await click(page, ".gender-item.male");
     await click(page, ".terms-actions button, .terms-actions div");
 
-    // A logged-out guest only gets ~10 stories; the subscribed account
-    // scrolls without limit.
-    const { COOMEET_EMAIL: email, COOMEET_PASSWORD: password } = process.env;
-    if (!email || !password) {
-      throw new Error("❌ Set COOMEET_EMAIL and COOMEET_PASSWORD in .env");
+    // A subscribed account gets the feed 20 stories a batch; a guest (and an
+    // account without a subscription) 5 a batch.
+    if (guest) {
+      console.log("👤 Running as a guest — not logged in");
+    } else {
+      const { COOMEET_EMAIL: email, COOMEET_PASSWORD: password } = process.env;
+      if (!email || !password) {
+        throw new Error("❌ Set COOMEET_EMAIL and COOMEET_PASSWORD in .env, or run with --guest");
+      }
+      console.log(`🔑 Logging in as ${email}`);
+      await login(email, password);
     }
-    console.log(`🔑 Logging in as ${email}`);
-    await login(email, password);
 
     // The slider method needs the stories page. The feed method reads from
     // the dialog page instead, where the app doesn't load stories itself —
-    // reloaded, so its connection opens logged in.
+    // reloaded, so its connection opens fresh (logged in, unless --guest).
     await page.goto(slider ? CONFIG.url : CONFIG.loginUrl, { waitUntil: "domcontentloaded" });
     await archiveStories({ limit, startedAt, slider, reloadEvery });
   } catch (error) {

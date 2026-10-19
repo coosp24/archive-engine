@@ -112,7 +112,13 @@
     if (!Array.isArray(reply.data?.stories)) {
       return { error: `unexpected reply: ${JSON.stringify(reply).slice(0, 200)}` };
     }
-    return { stories: reply.data.stories.map(shape) };
+    // `lock`: seconds left on the story limit coomeet's pages show a guest
+    // (or an account without a subscription) — informational only: the
+    // stories still come, just 5 a batch.
+    return {
+      stories: reply.data.stories.map(shape),
+      lock: Number(reply.data.storyLockExpirationTime) || 0,
+    };
   };
 
   window.__cooscrap = {

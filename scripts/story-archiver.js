@@ -200,8 +200,20 @@ export default async function archive({
     };
 
     let toLook = [];
+    let slowNoted = false;
     for (;;) {
       const batch = await nextBatch(toLook);
+      // A guest, or an account without a subscription, gets 20 stories a
+      // batch until it has seen its allowance; then coomeet puts a lock on
+      // (a few minutes) and sends 5 a batch — said once, since from there
+      // the run is ~4× slower.
+      if (batch.lock && !slowNoted) {
+        slowNoted = true;
+        printLine();
+        console.log(
+          `🐢 coomeet has limited this session — ${batch.stories.length} stories a batch instead of 20 (lock ${batch.lock}s), so the rest of the run is slower`,
+        );
+      }
       if (!batch.stories.length) {
         console.log("⏹️  coomeet has no more stories — end of the feed.");
         return;
