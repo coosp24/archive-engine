@@ -30,10 +30,12 @@ const args = Object.fromEntries(
     }),
 );
 
-// --limit=N stops after N stories, for trying it out; --reload-every=N
-// reloads the stories page every N stories instead of every 1,000, for
-// trying the reload without a long run.
+// --limit=N stops after N stories, for trying it out. --slider clicks
+// through the stories page instead of reading the feed from coomeet's
+// server, the old way; with it, --reload-every=N reloads the page every N
+// stories instead of every 1,000, for trying the reload without a long run.
 const limit = Number(args.limit) || null;
+const slider = args.slider === true;
 const reloadEvery = Number(args["reload-every"]) || undefined;
 
 /* ===================== MAIN ===================== */
@@ -84,8 +86,11 @@ async function main() {
     console.log(`🔑 Logging in as ${email}`);
     await login(email, password);
 
-    await page.goto(CONFIG.url, { waitUntil: "domcontentloaded" });
-    await archiveStories({ limit, startedAt, reloadEvery });
+    // The slider method needs the stories page. The feed method reads from
+    // the dialog page instead, where the app doesn't load stories itself —
+    // reloaded, so its connection opens logged in.
+    await page.goto(slider ? CONFIG.url : CONFIG.loginUrl, { waitUntil: "domcontentloaded" });
+    await archiveStories({ limit, startedAt, slider, reloadEvery });
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

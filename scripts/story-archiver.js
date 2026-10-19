@@ -9,9 +9,10 @@ import { createBatchSaver } from "../util/batch-saver.js";
 // Loaded into the page before coomeet's own code, in this order: owner.js and
 // network.js are cooscrap-tool's — they listen to everything the app
 // downloads and remember each story file's owner; owner.js also keeps the
-// story's publication time — and story.js reads the story on screen and
-// presses "next".
-const PAGE_SCRIPTS = ["owner.js", "network.js", "story.js"];
+// story's publication time — story.js reads the story on screen and presses
+// "next" (the slider method), and feed.js reads the feed straight from
+// coomeet's server (the default).
+const PAGE_SCRIPTS = ["owner.js", "network.js", "story.js", "feed.js"];
 
 export async function injectPageScripts(page) {
   for (const file of PAGE_SCRIPTS) {
@@ -43,6 +44,15 @@ const RELOAD_EVERY = 1000;
 // RELOAD_MAX_REPEATS repeats (then the feed really has started over).
 const RELOAD_SETTLE = 20;
 const RELOAD_MAX_REPEATS = 50;
+
+// The feed method: how long coomeet's connection gets to open after the page
+// loads, and how long a batch request gets to be answered (~0.3s normally).
+// Now and then coomeet lets one go unanswered; asked again a few seconds
+// later, it answers — so a request is retried BATCH_ATTEMPTS times before
+// the run gives up.
+const FEED_READY_TIMEOUT = 20000;
+const BATCH_TIMEOUT = 5000;
+const BATCH_ATTEMPTS = 6;
 
 /* ===================== SCRAPING ===================== */
 
@@ -105,10 +115,13 @@ async function reload(count) {
 
 // `startedAt` is when the whole run began (index.js), so the reported time
 // includes launching the browser and logging in, not just the stories.
-// `reloadEvery` is for testing the reload with fewer stories.
+// `slider` clicks through the stories page instead of reading the feed from
+// coomeet's server — the old way, kept in case coomeet changes its protocol.
+// `reloadEvery` is for testing the slider's reload with fewer stories.
 export default async function archive({
   limit = null,
   startedAt = Date.now(),
+  slider = false,
   reloadEvery = RELOAD_EVERY,
 } = {}) {
   const seen = new Set();
@@ -123,12 +136,94 @@ export default async function archive({
   const saver = createBatchSaver(known);
 
   try {
-    await walkStories();
+    await (slider ? walkStories() : readFeed());
   } finally {
     // Whatever's still queued is saved even if the run stopped early.
     await saver.flush();
   }
 
+  // Logs one story and queues it to be saved. Answers true once the run has
+  // reached --limit.
+  function record(story) {
+    count++;
+    if (!story.id) missingOwner++;
+
+    printLine();
+    console.log(`🎬 Story ${count}`);
+    console.log(`👤 Model id:  ${story.id ?? "unknown"}`);
+    console.log(`🏷️  Name:      ${story.name ?? "unknown"}`);
+    console.log(`🖼️  Avatar:    ${story.avatar ?? "unknown"}`);
+    console.log(
+      `📅 Published: ${story.published ? new Date(story.published).toISOString() : "unknown"}`,
+    );
+    console.log(`🎞️  Video src: ${story.src}`);
+    console.log(`🆔 Story id:  ${story.storyId ?? "unknown"}`);
+    console.log(`🖼️  Preview:   ${story.preview ?? "unknown"}`);
+
+    // A story without her id can't be filed under anyone, nor one without
+    // its own id (the stories table's key), so those are only logged.
+    if (!story.id || !story.storyId) {
+      unsaveable++;
+      console.warn("⚠️ Not saved — model id or story id unknown");
+    } else {
+      console.log(saver.add(story) ? "📥 Queued to save" : "⏭️  Already archived — skipped");
+    }
+    return Boolean(limit && count >= limit);
+  }
+
+  // The feed method (page/feed.js): batches of 20 straight from coomeet's
+  // server, each batch marked viewed as the next is asked for, until one
+  // comes back empty.
+  async function readFeed() {
+    const page = getPage();
+    try {
+      await page.waitForFunction(() => window.__cooscrap.feedReady(), {
+        timeout: FEED_READY_TIMEOUT,
+      });
+    } catch {
+      throw new Error("❌ coomeet's connection didn't open");
+    }
+
+    // The next batch, asked for again while coomeet doesn't answer. Sending
+    // the same looks again on a retry is harmless.
+    const nextBatch = async (toLook) => {
+      for (let attempt = 1; ; attempt++) {
+        const batch = await page.evaluate(
+          (look, timeout) => window.__cooscrap.nextBatch(look, timeout),
+          toLook,
+          BATCH_TIMEOUT,
+        );
+        if (!batch.error) return batch;
+        if (!batch.retry || attempt >= BATCH_ATTEMPTS) throw new Error(`❌ ${batch.error}`);
+        console.warn(`⚠️ ${batch.error} — asking again (${attempt}/${BATCH_ATTEMPTS - 1})`);
+      }
+    };
+
+    let toLook = [];
+    for (;;) {
+      const batch = await nextBatch(toLook);
+      if (!batch.stories.length) {
+        console.log("⏹️  coomeet has no more stories — end of the feed.");
+        return;
+      }
+      // A batch of nothing but stories already seen means the feed has
+      // started over (or the looks aren't landing) — stop rather than loop.
+      const fresh = batch.stories.filter((s) => !seen.has(s.src ?? s.storyId));
+      if (!fresh.length) {
+        console.log("🔁 A batch of stories already seen — end of the feed.");
+        return;
+      }
+      for (const story of fresh) {
+        seen.add(story.src ?? story.storyId);
+        if (record(story)) return;
+      }
+      toLook = batch.stories
+        .filter((s) => s.id && s.storyId)
+        .map(({ id, storyId }) => ({ id, storyId }));
+    }
+  }
+
+  // The slider method: click "next" through the stories page.
   async function walkStories() {
     let story = await firstStory();
     if (!story) {
@@ -153,31 +248,7 @@ export default async function archive({
       }
       sinceReload++;
       seen.add(story.src);
-      count++;
-      if (!story.id) missingOwner++;
-
-      printLine();
-      console.log(`🎬 Story ${count}`);
-      console.log(`👤 Model id:  ${story.id ?? "unknown"}`);
-      console.log(`🏷️  Name:      ${story.name ?? "unknown"}`);
-      console.log(`🖼️  Avatar:    ${story.avatar ?? "unknown"}`);
-      console.log(
-        `📅 Published: ${story.published ? new Date(story.published).toISOString() : "unknown"}`,
-      );
-      console.log(`🎞️  Video src: ${story.src}`);
-      console.log(`🆔 Story id:  ${story.storyId ?? "unknown"}`);
-      console.log(`🖼️  Preview:   ${story.preview ?? "unknown"}`);
-
-      // A story without her id can't be filed under anyone, nor one without
-      // its own id (the stories table's key), so those are only logged.
-      if (!story.id || !story.storyId) {
-        unsaveable++;
-        console.warn("⚠️ Not saved — model id or story id unknown");
-      } else {
-        console.log(saver.add(story) ? "📥 Queued to save" : "⏭️  Already archived — skipped");
-      }
-
-      if (limit && count >= limit) break;
+      if (record(story)) break;
 
       // Pressing "next" first, even before a reload, so coomeet counts this
       // story as seen; the one it brings up is the reload's first story.
@@ -201,6 +272,12 @@ export default async function archive({
   console.log(`🆕 New names:       ${added.name}`);
   console.log(`🆕 New avatars:     ${added.avatar}`);
   console.log(`⚠️  Failed to save:  ${stats.failed + unsaveable}`);
+  if (!slider) {
+    const unanswered = await getPage()
+      .evaluate(() => window.__cooscrap.lookTimeouts())
+      .catch(() => null);
+    if (unanswered) console.log(`⚠️  Views unanswered: ${unanswered} (coomeet didn't confirm them)`);
+  }
   console.log(`📡 Data consumed:   ${getDataUsageMB()} MB`);
   console.log(`⏱️  Total time:      ${formatDuration(Date.now() - startedAt)}`);
   return count;
