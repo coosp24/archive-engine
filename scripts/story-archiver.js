@@ -150,11 +150,14 @@ async function waitForFeed(page) {
 // `slider` clicks through the stories page instead of reading the feed from
 // coomeet's server — the old way, kept in case coomeet changes its protocol.
 // `reloadEvery` is for testing the slider's reload with fewer stories.
+// `report` is filled in with the run's numbers for the runs table — even
+// when the run fails partway, with what it got through.
 export default async function archive({
   limit = null,
   startedAt = Date.now(),
   slider = false,
   reloadEvery = RELOAD_EVERY,
+  report = {},
 } = {}) {
   const seen = new Set();
   let count = 0;
@@ -174,6 +177,18 @@ export default async function archive({
   } finally {
     // Whatever's still queued is saved even if the run stopped early.
     await saver.flush();
+    Object.assign(report, {
+      storiesFound: count,
+      ownerUnknown: missingOwner,
+      saved: saver.stats.saved,
+      skipped: saver.stats.skipped,
+      failedSaves: saver.stats.failed + unsaveable,
+      newModels: saver.added.model,
+      newStories: saver.added.story,
+      newNames: saver.added.name,
+      newAvatars: saver.added.avatar,
+      onlineModels: online.size,
+    });
   }
 
   // Queues one story to be saved, and logs it in development. Answers true

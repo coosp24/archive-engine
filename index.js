@@ -1,8 +1,9 @@
 import puppeteer from "puppeteer-core";
 import { click } from "./util/helpers.js";
-import { setContext } from "./util/context.js";
+import { getDataUsageMB, setContext } from "./util/context.js";
 import { login } from "./util/form-logger.js";
 import { getPrimaryAccount } from "./api/account.js";
+import { saveRun } from "./api/run.js";
 import archiveStories, { injectPageScripts } from "./scripts/story-archiver.js";
 
 /* ===================== CONSTANTS ===================== */
@@ -74,6 +75,8 @@ async function launchBrowser(attempts = 2) {
 
 async function main() {
   const startedAt = Date.now();
+  // What the run did, for the scrape log (api/run.js); filled in as it goes.
+  const run = { startedAt, slider, limit };
   let browser;
   try {
     browser = await launchBrowser();
@@ -88,6 +91,7 @@ async function main() {
     // account without a subscription) 5 a batch. With no primary account in
     // the accounts table, the run goes ahead as a guest.
     const account = guest ? null : await getPrimaryAccount();
+    run.guest = !account;
     if (account) {
       console.log(`🔑 Logging in as ${account.email}`);
       await login(account.email, account.password);
@@ -101,12 +105,16 @@ async function main() {
     // the dialog page instead, where the app doesn't load stories itself —
     // reloaded, so its connection opens fresh (logged in, unless --guest).
     await page.goto(slider ? CONFIG.url : CONFIG.loginUrl, { waitUntil: "domcontentloaded" });
-    await archiveStories({ limit, startedAt, slider, reloadEvery });
+    await archiveStories({ limit, startedAt, slider, reloadEvery, report: run });
   } catch (error) {
     console.error(error.message);
+    run.error = error.message;
     process.exitCode = 1;
   } finally {
     await browser?.close();
+    run.finishedAt = Date.now();
+    run.dataMB = Number(getDataUsageMB());
+    await saveRun(run);
   }
 }
 
