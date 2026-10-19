@@ -71,9 +71,21 @@
   // { avatar: { s, m }, name, media: { webm, preview, … }, publicationTime,
   //   womanId, id }. Shaped like page/story.js's currentStory().
   const cdn = (key) => (typeof key === "string" && /^[\w.-]+$/.test(key) ? CDN + key : null);
+
+  // coomeet sends some names HTML-escaped — "Hazel&lt;3" for what its pages
+  // show as "Hazel<3". A <textarea> decodes every kind of escape and never
+  // runs anything; a plain "&" or "<" comes through as it is. It's made on
+  // first use: this runs before the page has a document to make it in.
+  let decoder = null;
+  const unescape = (text) => {
+    decoder ??= document.createElement("textarea");
+    decoder.innerHTML = text;
+    return decoder.value;
+  };
+
   const shape = (s) => ({
     id: s.womanId == null ? null : String(s.womanId),
-    name: typeof s.name === "string" && s.name.trim() ? s.name.trim() : null,
+    name: typeof s.name === "string" && s.name.trim() ? unescape(s.name).trim() || null : null,
     avatar: cdn(s.avatar?.m || s.avatar?.s),
     published: Number(s.publicationTime) > 0 ? Number(s.publicationTime) * 1000 : null,
     storyId: s.id == null ? null : String(s.id),
