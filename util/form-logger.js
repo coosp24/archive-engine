@@ -2,7 +2,7 @@ import { click, type, wait } from "./helpers.js";
 import { getPage } from "./context.js";
 
 // The same login as cooscrap-engine/util/form-logger.js. Credentials come
-// from .env (COOMEET_EMAIL / COOMEET_PASSWORD) — never from the code.
+// from the accounts table (api/account.js) — never from the code.
 export const login = async (email, password) => {
   const page = getPage();
   await click(

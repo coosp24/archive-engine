@@ -1,5 +1,5 @@
 import { recordStories } from "../api/story.js";
-import { wait } from "./helpers.js";
+import { isDev, wait } from "./helpers.js";
 
 // How many stories go to Supabase per call, and how many skipped models are
 // marked seen per call. A call takes ~0.2s whatever its size, so fewer,
@@ -31,7 +31,7 @@ export function createBatchSaver(known) {
         const isNew = await recordStories(stories, seenIds);
         for (const kind of Object.keys(added)) added[kind] += isNew[kind] ?? 0;
         stats.saved += stories.length;
-        if (stories.length) {
+        if (isDev && stories.length) {
           const news = Object.keys(added)
             .filter((kind) => isNew[kind])
             .map((kind) => `${isNew[kind]} ${isNew[kind] === 1 ? kind : PLURAL[kind]}`);

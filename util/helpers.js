@@ -1,3 +1,10 @@
+/* ===================== LOGGING ===================== */
+
+// ENV=development logs every story and every batch saved as the run goes;
+// otherwise (as on CI) a run logs only its start, its problems and the final
+// report.
+export const isDev = process.env.ENV === "development";
+
 /* ===================== BROWSER HELPERS ===================== */
 
 export async function wait(ms) {

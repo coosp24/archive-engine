@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { formatDuration, printLine } from "../util/helpers.js";
+import { formatDuration, isDev, printLine } from "../util/helpers.js";
 import { getConfig, getPage, getDataUsageMB } from "../util/context.js";
 import { getKnownModels } from "../api/story.js";
 import { createBatchSaver } from "../util/batch-saver.js";
@@ -103,8 +103,10 @@ async function moveOn(previousSrc) {
 // Reloads the stories page (see RELOAD_EVERY) and answers its first story,
 // or null — with the reason logged — when there isn't one.
 async function reload(count) {
-  printLine();
-  console.log(`🔄 Reloading the stories page to keep it fast (${count} stories so far)`);
+  if (isDev) {
+    printLine();
+    console.log(`🔄 Reloading the stories page to keep it fast (${count} stories so far)`);
+  }
   await getPage().goto(getConfig().url, { waitUntil: "domcontentloaded" });
   const story = await firstStory();
   if (!story && !(await reportLimit())) {
@@ -142,31 +144,35 @@ export default async function archive({
     await saver.flush();
   }
 
-  // Logs one story and queues it to be saved. Answers true once the run has
-  // reached --limit.
+  // Queues one story to be saved, and logs it in development. Answers true
+  // once the run has reached --limit.
   function record(story) {
     count++;
     if (!story.id) missingOwner++;
 
-    printLine();
-    console.log(`🎬 Story ${count}`);
-    console.log(`👤 Model id:  ${story.id ?? "unknown"}`);
-    console.log(`🏷️  Name:      ${story.name ?? "unknown"}`);
-    console.log(`🖼️  Avatar:    ${story.avatar ?? "unknown"}`);
-    console.log(
-      `📅 Published: ${story.published ? new Date(story.published).toISOString() : "unknown"}`,
-    );
-    console.log(`🎞️  Video src: ${story.src}`);
-    console.log(`🆔 Story id:  ${story.storyId ?? "unknown"}`);
-    console.log(`🖼️  Preview:   ${story.preview ?? "unknown"}`);
-
     // A story without her id can't be filed under anyone, nor one without
-    // its own id (the stories table's key), so those are only logged.
+    // its own id (the stories table's key), so those are only counted.
+    let outcome;
     if (!story.id || !story.storyId) {
       unsaveable++;
-      console.warn("⚠️ Not saved — model id or story id unknown");
+      outcome = "⚠️  Not saved — model id or story id unknown";
     } else {
-      console.log(saver.add(story) ? "📥 Queued to save" : "⏭️  Already archived — skipped");
+      outcome = saver.add(story) ? "📥 Queued to save" : "⏭️  Already archived — skipped";
+    }
+
+    if (isDev) {
+      printLine();
+      console.log(`🎬 Story ${count}`);
+      console.log(`👤 Model id:  ${story.id ?? "unknown"}`);
+      console.log(`🏷️  Name:      ${story.name ?? "unknown"}`);
+      console.log(`🖼️  Avatar:    ${story.avatar ?? "unknown"}`);
+      console.log(
+        `📅 Published: ${story.published ? new Date(story.published).toISOString() : "unknown"}`,
+      );
+      console.log(`🎞️  Video src: ${story.src}`);
+      console.log(`🆔 Story id:  ${story.storyId ?? "unknown"}`);
+      console.log(`🖼️  Preview:   ${story.preview ?? "unknown"}`);
+      console.log(outcome);
     }
     return Boolean(limit && count >= limit);
   }
@@ -250,7 +256,7 @@ export default async function archive({
       if (seen.has(story.src)) {
         if (sinceReload < RELOAD_SETTLE && repeatsSinceReload < RELOAD_MAX_REPEATS) {
           repeatsSinceReload++;
-          console.log("↪️  A story from before the reload — passed over");
+          if (isDev) console.log("↪️  A story from before the reload — passed over");
           story = await moveOn(story.src);
           continue;
         }

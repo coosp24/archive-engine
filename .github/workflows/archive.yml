@@ -25,9 +25,8 @@ jobs:
     timeout-minutes: 55
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      # The login comes from the accounts table, read with this key.
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-      COOMEET_EMAIL: ${{ secrets.COOMEET_EMAIL }}
-      COOMEET_PASSWORD: ${{ secrets.COOMEET_PASSWORD }}
       # ubuntu-latest ships with Google Chrome preinstalled here
       BROWSER_PATH: /usr/bin/google-chrome
       # run the real (non-headless) browser under a virtual display

@@ -2,6 +2,7 @@ import puppeteer from "puppeteer-core";
 import { click } from "./util/helpers.js";
 import { setContext } from "./util/context.js";
 import { login } from "./util/form-logger.js";
+import { getPrimaryAccount } from "./api/account.js";
 import archiveStories, { injectPageScripts } from "./scripts/story-archiver.js";
 
 /* ===================== CONSTANTS ===================== */
@@ -88,10 +89,7 @@ async function main() {
     if (guest) {
       console.log("👤 Running as a guest — not logged in");
     } else {
-      const { COOMEET_EMAIL: email, COOMEET_PASSWORD: password } = process.env;
-      if (!email || !password) {
-        throw new Error("❌ Set COOMEET_EMAIL and COOMEET_PASSWORD in .env, or run with --guest");
-      }
+      const { email, password } = await getPrimaryAccount();
       console.log(`🔑 Logging in as ${email}`);
       await login(email, password);
     }
