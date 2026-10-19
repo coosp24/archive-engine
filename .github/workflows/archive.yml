@@ -1,0 +1,49 @@
+name: Archive
+
+# No `schedule:` here on purpose. Supabase is the clock: pg_cron dispatches
+# this workflow every hour — see supabase/schedule.sql. GitHub's own cron
+# fires late or not at all, and a cron line here as well would run every
+# hour twice.
+on:
+  workflow_dispatch: # the Supabase schedule, or Run workflow in the Actions tab
+    inputs:
+      guest:
+        description: Run as a guest (not logged in)
+        type: boolean
+        default: false
+
+# One run at a time. A run that's still going when the next hour comes is
+# waited for rather than raced — two browsers on the same account at once is
+# asking for trouble.
+concurrency:
+  group: archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      COOMEET_EMAIL: ${{ secrets.COOMEET_EMAIL }}
+      COOMEET_PASSWORD: ${{ secrets.COOMEET_PASSWORD }}
+      # ubuntu-latest ships with Google Chrome preinstalled here
+      BROWSER_PATH: /usr/bin/google-chrome
+      # run the real (non-headless) browser under a virtual display
+      HEADLESS: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install virtual display (Xvfb)
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Archive stories
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node . ${{ inputs.guest && '--guest' || '' }}
