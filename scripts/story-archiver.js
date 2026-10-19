@@ -49,8 +49,13 @@ const RELOAD_MAX_REPEATS = 50;
 // loads, and how long a batch request gets to be answered (~0.3s normally).
 // Now and then coomeet lets one go unanswered; asked again a few seconds
 // later, it answers — so a request is retried BATCH_ATTEMPTS times before
-// the run gives up.
+// the run gives up. Now and then the connection doesn't open at all (it has
+// failed for the archive and cooscrap-engine in the same minute, so it's
+// coomeet's side), so the page is reloaded and waited on again,
+// FEED_READY_ATTEMPTS times in all, FEED_RETRY_DELAY apart.
 const FEED_READY_TIMEOUT = 20000;
+const FEED_READY_ATTEMPTS = 3;
+const FEED_RETRY_DELAY = 10000;
 const BATCH_TIMEOUT = 5000;
 const BATCH_ATTEMPTS = 6;
 
@@ -113,6 +118,31 @@ async function reload(count) {
     console.log("⏹️  No story after reloading — end of the stories.");
   }
   return story;
+}
+
+// Waits for coomeet's connection to open and be authorized, reloading the
+// page while it doesn't (see FEED_READY_ATTEMPTS). Each failure logs why.
+async function waitForFeed(page) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await page.waitForFunction(() => window.__cooscrap.feedReady(), {
+        timeout: FEED_READY_TIMEOUT,
+      });
+      return;
+    } catch {
+      const status = await page
+        .evaluate(() => window.__cooscrap.socketStatus())
+        .catch(() => "the page didn't answer");
+      if (attempt >= FEED_READY_ATTEMPTS) {
+        throw new Error(`❌ coomeet's connection didn't open — ${status}`);
+      }
+      console.warn(
+        `⚠️ coomeet's connection didn't open (${status}) — reloading (${attempt}/${FEED_READY_ATTEMPTS - 1})`,
+      );
+      await new Promise((r) => setTimeout(r, FEED_RETRY_DELAY));
+      await page.reload({ waitUntil: "domcontentloaded" });
+    }
+  }
 }
 
 // `startedAt` is when the whole run began (index.js), so the reported time
@@ -182,13 +212,7 @@ export default async function archive({
   // comes back empty.
   async function readFeed() {
     const page = getPage();
-    try {
-      await page.waitForFunction(() => window.__cooscrap.feedReady(), {
-        timeout: FEED_READY_TIMEOUT,
-      });
-    } catch {
-      throw new Error("❌ coomeet's connection didn't open");
-    }
+    await waitForFeed(page);
 
     // The next batch, asked for again while coomeet doesn't answer. Sending
     // the same looks again on a retry is harmless.
