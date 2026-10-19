@@ -1,12 +1,12 @@
 import supabase from "../util/supabase.js";
 
 // Saves a batch of stories as the run saw them, and marks the models in
-// `seen` as seen again, in one round trip (see record_stories in
-// supabase/record-stories.sql). Answers how many of each were new to the
-// archive: { model, name, avatar, story }.
-export const recordStories = async (stories, seen = []) => {
+// `seen` as seen again — those in `seenOnline` online, the rest not —
+// in one round trip (see record_stories in supabase/online.sql). Answers how
+// many of each were new to the archive: { model, name, avatar, story }.
+export const recordStories = async (stories, seen = [], seenOnline = []) => {
   const { data, error } = await supabase.rpc("record_stories", {
-    p_stories: stories.map(({ id, name, avatar, storyId, src, preview, published }) => ({
+    p_stories: stories.map(({ id, name, avatar, storyId, src, preview, published, online }) => ({
       model_id: id,
       name,
       avatar,
@@ -14,8 +14,10 @@ export const recordStories = async (stories, seen = []) => {
       story: src,
       preview,
       published_at: published ? new Date(published).toISOString() : null,
+      online,
     })),
     p_seen: seen,
+    p_seen_online: seenOnline,
   });
 
   if (error) throw new Error(error.message);

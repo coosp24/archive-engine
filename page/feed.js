@@ -84,7 +84,9 @@
 
   // The fields the archive keeps, from a story as the server sends it:
   // { avatar: { s, m }, name, media: { webm, preview, … }, publicationTime,
-  //   womanId, id }. Shaped like page/story.js's currentStory().
+  //   womanId, id, online }. Shaped like page/story.js's currentStory().
+  // `online` is 1 while she's online — what the stories page draws the green
+  // dot beside her avatar from.
   const cdn = (key) => (typeof key === "string" && /^[\w.-]+$/.test(key) ? CDN + key : null);
 
   // coomeet sends some names HTML-escaped — "Hazel&lt;3" for what its pages
@@ -106,6 +108,7 @@
     storyId: s.id == null ? null : String(s.id),
     src: cdn(s.media?.webm),
     preview: cdn(s.media?.preview),
+    online: s.online == null ? null : Number(s.online) === 1,
   });
 
   // Marks as viewed the batch before (`toLook`: { id, storyId } pairs) and

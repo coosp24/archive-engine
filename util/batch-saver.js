@@ -17,18 +17,20 @@ const PLURAL = { model: "models", name: "names", avatar: "avatars", story: "stor
 //
 // `known` is every model as the archive has her now (getKnownModels). A
 // story that would change nothing — her current story, under the same name
-// and avatar — isn't sent at all; she's only marked as seen again.
+// and avatar — isn't sent at all; she's only marked as seen again, online
+// or not.
 export function createBatchSaver(known) {
   let pending = [];
   let seen = new Set();
+  let seenOnline = new Set();
   let sending = Promise.resolve();
   const stats = { queued: 0, skipped: 0, saved: 0, failed: 0 };
   const added = { model: 0, name: 0, avatar: 0, story: 0 };
 
-  async function send(stories, seenIds) {
+  async function send(stories, seenIds, onlineIds) {
     for (let attempt = 1; ; attempt++) {
       try {
-        const isNew = await recordStories(stories, seenIds);
+        const isNew = await recordStories(stories, seenIds, onlineIds);
         for (const kind of Object.keys(added)) added[kind] += isNew[kind] ?? 0;
         stats.saved += stories.length;
         if (isDev && stories.length) {
@@ -54,9 +56,11 @@ export function createBatchSaver(known) {
     if (pending.length || seen.size) {
       const stories = pending;
       const seenIds = [...seen];
+      const onlineIds = [...seenOnline];
       pending = [];
       seen = new Set();
-      sending = sending.then(() => send(stories, seenIds));
+      seenOnline = new Set();
+      sending = sending.then(() => send(stories, seenIds, onlineIds));
     }
     return sending;
   }
@@ -76,6 +80,7 @@ export function createBatchSaver(known) {
 
     if (unchanged) {
       seen.add(story.id);
+      if (story.online) seenOnline.add(story.id);
       stats.skipped++;
     } else {
       pending.push(story);
