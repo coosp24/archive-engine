@@ -30,8 +30,11 @@ const args = Object.fromEntries(
     }),
 );
 
-// --limit=N stops after N stories, for trying it out.
+// --limit=N stops after N stories, for trying it out; --reload-every=N
+// reloads the stories page every N stories instead of every 1,000, for
+// trying the reload without a long run.
 const limit = Number(args.limit) || null;
+const reloadEvery = Number(args["reload-every"]) || undefined;
 
 /* ===================== MAIN ===================== */
 
@@ -82,7 +85,7 @@ async function main() {
     await login(email, password);
 
     await page.goto(CONFIG.url, { waitUntil: "domcontentloaded" });
-    await archiveStories({ limit, startedAt });
+    await archiveStories({ limit, startedAt, reloadEvery });
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

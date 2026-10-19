@@ -123,5 +123,55 @@
     return el.innerText.replace(/\s+/g, " ").trim() || "No new videos yet";
   };
 
-  window.__cooscrap = { ...window.__cooscrap, currentStory, nextStory, limitMessage };
+  // Resolves with the story on screen once its src isn't `prev` and her id is
+  // known — or `ownerTimeout` ms after it appeared, without her id; null if
+  // no new story shows up within `timeout`. Done in the page rather than by
+  // polling from outside, so the run hears of the next story the moment it's
+  // there: on every change to a video's src or the current slide, and every
+  // 25ms for her id, which comes over the network rather than in the DOM.
+  const waitForStory = (prev, timeout, ownerTimeout) =>
+    new Promise((resolve) => {
+      let appearedAt = null;
+      let finished = false;
+      const done = (story) => {
+        if (finished) return;
+        finished = true;
+        observer.disconnect();
+        clearInterval(interval);
+        clearTimeout(timer);
+        resolve(story);
+      };
+      const check = () => {
+        const story = currentStory();
+        if (!story.src || story.src === prev) return;
+        appearedAt ??= Date.now();
+        if (story.id || Date.now() - appearedAt >= ownerTimeout) done(story);
+      };
+      const observer = new MutationObserver(check);
+      observer.observe(document.body, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["src", "data-name"],
+      });
+      const interval = setInterval(check, 25);
+      const timer = setTimeout(() => done(appearedAt ? currentStory() : null), timeout);
+      check();
+    });
+
+  // Presses "next" and waits for the story it brings up, in one call:
+  // { pressed: false } when there's no next button, else { pressed: true,
+  // story } with story as from waitForStory.
+  const advance = async (prev, timeout, ownerTimeout) => {
+    if (!nextStory()) return { pressed: false, story: null };
+    return { pressed: true, story: await waitForStory(prev, timeout, ownerTimeout) };
+  };
+
+  window.__cooscrap = {
+    ...window.__cooscrap,
+    currentStory,
+    nextStory,
+    limitMessage,
+    waitForStory,
+    advance,
+  };
 })();

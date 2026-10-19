@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { formatDuration, printLine } from "../util/helpers.js";
-import { getPage, getDataUsageMB } from "../util/context.js";
-import { recordStory } from "../api/story.js";
+import { getConfig, getPage, getDataUsageMB } from "../util/context.js";
+import { getKnownModels } from "../api/story.js";
+import { createBatchSaver } from "../util/batch-saver.js";
 
 /* ===================== PAGE SCRIPTS ===================== */
 
@@ -31,10 +32,19 @@ const NEXT_STORY_TIMEOUT = 15000;
 // on screen — the payload naming her usually arrived well before.
 const OWNER_TIMEOUT = 3000;
 
-/* ===================== SCRAPING ===================== */
+// coomeet's app keeps every story it has shown in memory, so each "next"
+// gets slower the longer the page is open: 30ms a story at first, 38ms by
+// 1,000, 136ms by 4,500. Reloading the page every so often starts it fresh,
+// for ~2s a reload — and the feed carries on with the stories not seen yet.
+const RELOAD_EVERY = 1000;
+// …mostly: a story or two from before a reload can come round again, so for
+// a while after one, a repeat is passed over rather than taken for the end
+// of the feed — until RELOAD_SETTLE new stories have come, or
+// RELOAD_MAX_REPEATS repeats (then the feed really has started over).
+const RELOAD_SETTLE = 20;
+const RELOAD_MAX_REPEATS = 50;
 
-const currentStory = () =>
-  getPage().evaluate(() => window.__cooscrap.currentStory());
+/* ===================== SCRAPING ===================== */
 
 // coomeet's "No new videos yet" screen — a guest's limit, or the end of the
 // feed: logs what it says and answers true, or false when it isn't showing.
@@ -45,110 +55,152 @@ async function reportLimit() {
   return true;
 }
 
-// The story on screen once it has a src other than `previousSrc`, with its
-// owner if she turns up within OWNER_TIMEOUT. Null if no new story appears.
-// "No new videos yet" doesn't cut the wait short: coomeet loads the feed in
-// batches of 16, and moving faster than a batch arrives shows that screen
-// for a moment before the next story.
-async function waitForStory(previousSrc, timeout) {
-  const page = getPage();
-  try {
-    await page.waitForFunction(
-      (prev) => {
-        const { src } = window.__cooscrap.currentStory();
-        return src && src !== prev;
-      },
-      { timeout },
-      previousSrc,
-    );
-  } catch {
+// The first story, once it's on screen with its owner if she turns up within
+// OWNER_TIMEOUT; null if none appears.
+const firstStory = () =>
+  getPage().evaluate(
+    (timeout, ownerTimeout) => window.__cooscrap.waitForStory(null, timeout, ownerTimeout),
+    FIRST_STORY_TIMEOUT,
+    OWNER_TIMEOUT,
+  );
+
+// Presses "next" and waits for the story after `previousSrc`, in one call
+// (see advance in page/story.js). "No new videos yet" doesn't cut the wait
+// short: coomeet loads the feed in batches of 16, and moving faster than a
+// batch arrives shows that screen for a moment before the next story.
+const nextStory = (previousSrc) =>
+  getPage().evaluate(
+    (prev, timeout, ownerTimeout) => window.__cooscrap.advance(prev, timeout, ownerTimeout),
+    previousSrc,
+    NEXT_STORY_TIMEOUT,
+    OWNER_TIMEOUT,
+  );
+
+// Moves on from the story with `previousSrc`: the next story, or null — with
+// the reason logged — when there isn't one.
+async function moveOn(previousSrc) {
+  const next = await nextStory(previousSrc);
+  if (!next.pressed) {
+    console.log("⏹️  No next button — end of the stories.");
     return null;
   }
-  try {
-    await page.waitForFunction(() => window.__cooscrap.currentStory().id, {
-      timeout: OWNER_TIMEOUT,
-    });
-  } catch {}
-  return currentStory();
+  if (!next.story && !(await reportLimit())) {
+    console.log("⏹️  Next didn't bring up a new story — end of the stories.");
+  }
+  return next.story;
+}
+
+// Reloads the stories page (see RELOAD_EVERY) and answers its first story,
+// or null — with the reason logged — when there isn't one.
+async function reload(count) {
+  printLine();
+  console.log(`🔄 Reloading the stories page to keep it fast (${count} stories so far)`);
+  await getPage().goto(getConfig().url, { waitUntil: "domcontentloaded" });
+  const story = await firstStory();
+  if (!story && !(await reportLimit())) {
+    console.log("⏹️  No story after reloading — end of the stories.");
+  }
+  return story;
 }
 
 // `startedAt` is when the whole run began (index.js), so the reported time
 // includes launching the browser and logging in, not just the stories.
-export default async function archive({ limit = null, startedAt = Date.now() } = {}) {
-  const page = getPage();
+// `reloadEvery` is for testing the reload with fewer stories.
+export default async function archive({
+  limit = null,
+  startedAt = Date.now(),
+  reloadEvery = RELOAD_EVERY,
+} = {}) {
   const seen = new Set();
   let count = 0;
   let missingOwner = 0;
-  let failed = 0;
-  // How many of each were new to the archive this run.
-  const added = { model: 0, name: 0, avatar: 0, story: 0 };
+  let unsaveable = 0;
 
-  let story = await waitForStory(null, FIRST_STORY_TIMEOUT);
-  if (!story) {
-    if (await reportLimit()) return 0;
-    throw new Error("❌ No story showed up on the stories page");
+  // What the archive already has, so stories that would change nothing
+  // aren't sent; the rest are saved in batches while the run moves on.
+  const known = await getKnownModels();
+  console.log(`📚 ${known.size} models already in the archive`);
+  const saver = createBatchSaver(known);
+
+  try {
+    await walkStories();
+  } finally {
+    // Whatever's still queued is saved even if the run stopped early.
+    await saver.flush();
   }
 
-  while (story) {
-    // coomeet loops back to the start after the last story.
-    if (seen.has(story.src)) {
-      console.log("🔁 Back at a story already seen — end of the stories.");
-      break;
+  async function walkStories() {
+    let story = await firstStory();
+    if (!story) {
+      if (await reportLimit()) return;
+      throw new Error("❌ No story showed up on the stories page");
     }
-    seen.add(story.src);
-    count++;
-    if (!story.id) missingOwner++;
 
-    printLine();
-    console.log(`🎬 Story ${count}`);
-    console.log(`👤 Model id:  ${story.id ?? "unknown"}`);
-    console.log(`🏷️  Name:      ${story.name ?? "unknown"}`);
-    console.log(`🖼️  Avatar:    ${story.avatar ?? "unknown"}`);
-    console.log(
-      `📅 Published: ${story.published ? new Date(story.published).toISOString() : "unknown"}`,
-    );
-    console.log(`🎞️  Video src: ${story.src}`);
-    console.log(`🆔 Story id:  ${story.storyId ?? "unknown"}`);
-    console.log(`🖼️  Preview:   ${story.preview ?? "unknown"}`);
+    // Since the last reload: new stories seen, and repeats passed over.
+    let sinceReload = Infinity;
+    let repeatsSinceReload = 0;
+    while (story) {
+      if (seen.has(story.src)) {
+        if (sinceReload < RELOAD_SETTLE && repeatsSinceReload < RELOAD_MAX_REPEATS) {
+          repeatsSinceReload++;
+          console.log("↪️  A story from before the reload — passed over");
+          story = await moveOn(story.src);
+          continue;
+        }
+        // coomeet has looped back to the start after the last story.
+        console.log("🔁 Back at a story already seen — end of the stories.");
+        break;
+      }
+      sinceReload++;
+      seen.add(story.src);
+      count++;
+      if (!story.id) missingOwner++;
 
-    // A story without her id can't be filed under anyone, nor one without
-    // its own id (the stories table's key), so those are only logged.
-    if (!story.id || !story.storyId) {
-      failed++;
-      console.warn("⚠️ Not saved — model id or story id unknown");
-    } else {
-      try {
-        const isNew = await recordStory(story);
-        for (const kind of Object.keys(added)) if (isNew[kind]) added[kind]++;
-        const news = Object.keys(added).filter((kind) => isNew[kind]);
-        console.log(news.length ? `✅ Saved — new ${news.join(", ")}` : "✅ Saved — nothing new");
-      } catch (error) {
-        failed++;
-        console.warn(error.message);
+      printLine();
+      console.log(`🎬 Story ${count}`);
+      console.log(`👤 Model id:  ${story.id ?? "unknown"}`);
+      console.log(`🏷️  Name:      ${story.name ?? "unknown"}`);
+      console.log(`🖼️  Avatar:    ${story.avatar ?? "unknown"}`);
+      console.log(
+        `📅 Published: ${story.published ? new Date(story.published).toISOString() : "unknown"}`,
+      );
+      console.log(`🎞️  Video src: ${story.src}`);
+      console.log(`🆔 Story id:  ${story.storyId ?? "unknown"}`);
+      console.log(`🖼️  Preview:   ${story.preview ?? "unknown"}`);
+
+      // A story without her id can't be filed under anyone, nor one without
+      // its own id (the stories table's key), so those are only logged.
+      if (!story.id || !story.storyId) {
+        unsaveable++;
+        console.warn("⚠️ Not saved — model id or story id unknown");
+      } else {
+        console.log(saver.add(story) ? "📥 Queued to save" : "⏭️  Already archived — skipped");
+      }
+
+      if (limit && count >= limit) break;
+
+      // Pressing "next" first, even before a reload, so coomeet counts this
+      // story as seen; the one it brings up is the reload's first story.
+      story = await moveOn(story.src);
+      if (story && count % reloadEvery === 0) {
+        story = await reload(count);
+        sinceReload = 0;
+        repeatsSinceReload = 0;
       }
     }
-
-    if (limit && count >= limit) break;
-
-    const pressed = await page.evaluate(() => window.__cooscrap.nextStory());
-    if (!pressed) {
-      console.log("⏹️  No next button — end of the stories.");
-      break;
-    }
-    story = await waitForStory(story.src, NEXT_STORY_TIMEOUT);
-    if (!story && !(await reportLimit())) {
-      console.log("⏹️  Next didn't bring up a new story — end of the stories.");
-    }
   }
 
+  const { stats, added } = saver;
   printLine();
   console.log(`🎞️  Stories found:   ${count}`);
   console.log(`❓ Owner unknown:   ${missingOwner}`);
+  console.log(`💾 Saved:           ${stats.saved}`);
+  console.log(`⏭️  Skipped:         ${stats.skipped} (already archived, unchanged)`);
   console.log(`🆕 New models:      ${added.model}`);
   console.log(`🆕 New stories:     ${added.story}`);
   console.log(`🆕 New names:       ${added.name}`);
   console.log(`🆕 New avatars:     ${added.avatar}`);
-  console.log(`⚠️  Failed to save:  ${failed}`);
+  console.log(`⚠️  Failed to save:  ${stats.failed + unsaveable}`);
   console.log(`📡 Data consumed:   ${getDataUsageMB()} MB`);
   console.log(`⏱️  Total time:      ${formatDuration(Date.now() - startedAt)}`);
   return count;
