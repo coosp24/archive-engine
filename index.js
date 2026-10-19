@@ -61,6 +61,7 @@ async function launchBrowser(attempts = 2) {
 }
 
 async function main() {
+  const startedAt = Date.now();
   let browser;
   try {
     browser = await launchBrowser();
@@ -81,7 +82,7 @@ async function main() {
     await login(email, password);
 
     await page.goto(CONFIG.url, { waitUntil: "domcontentloaded" });
-    await archiveStories({ limit });
+    await archiveStories({ limit, startedAt });
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

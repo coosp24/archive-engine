@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { printLine } from "../util/helpers.js";
+import { formatDuration, printLine } from "../util/helpers.js";
 import { getPage, getDataUsageMB } from "../util/context.js";
 import { recordStory } from "../api/story.js";
 
@@ -72,7 +72,9 @@ async function waitForStory(previousSrc, timeout) {
   return currentStory();
 }
 
-export default async function archive({ limit = null } = {}) {
+// `startedAt` is when the whole run began (index.js), so the reported time
+// includes launching the browser and logging in, not just the stories.
+export default async function archive({ limit = null, startedAt = Date.now() } = {}) {
   const page = getPage();
   const seen = new Set();
   let count = 0;
@@ -148,5 +150,6 @@ export default async function archive({ limit = null } = {}) {
   console.log(`🆕 New avatars:     ${added.avatar}`);
   console.log(`⚠️  Failed to save:  ${failed}`);
   console.log(`📡 Data consumed:   ${getDataUsageMB()} MB`);
+  console.log(`⏱️  Total time:      ${formatDuration(Date.now() - startedAt)}`);
   return count;
 }

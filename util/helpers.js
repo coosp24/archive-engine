@@ -23,6 +23,18 @@ export async function type(page, selector, text) {
   }
 }
 
+// A duration for the logs: "1h 02m 05s", "3m 12s", "45s".
+export function formatDuration(ms) {
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  if (h) return `${h}h ${pad(m)}m ${pad(s)}s`;
+  if (m) return `${m}m ${pad(s)}s`;
+  return `${s}s`;
+}
+
 export function printLine() {
   console.log(
     "-------------------------------------------------------------------------------",
