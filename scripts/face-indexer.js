@@ -5,7 +5,9 @@ import { formatDuration, isDev, printLine, wait } from "../util/helpers.js";
 // Finds the faces in the archive's avatars and story previews and saves a
 // fingerprint for each (util/faces.js, supabase/faces.sql), for the site's
 // search by photo. Newest images first, so each run's new ones are done
-// before the backlog, which is worked through a little every run.
+// before the backlog, which is worked through a little every run. A model
+// keeps only so many story faces (the database decides which): once she
+// has them, her stories are passed over without being downloaded.
 
 // Images fetched and saved per round trip.
 const BATCH = 50;
@@ -41,8 +43,9 @@ const rounded = (faces) =>
 // One image looked at: { …todo, error, faces }, or null when it couldn't be
 // fetched just now (a timeout, a dropped connection) — left for next time.
 // An image that's gone or isn't an image is saved with its error, so it
-// isn't tried again and again.
+// isn't tried again and again. A capped one (see above) isn't fetched.
 async function scan(todo) {
+  if (todo.capped) return { ...todo, error: null, faces: [] };
   let bytes;
   try {
     const res = await fetch(todo.image, {
@@ -85,12 +88,13 @@ async function mapLimit(items, limit, fn) {
 
 // Works through the images not yet looked at until there are none left,
 // `budgetMs` has passed, or `limit` images are done. Answers { scanned,
-// faces, skipped, done, error } — done when nothing's left to look at. A
+// faces, passed, skipped, done, error } — faces kept, images passed over
+// as capped; done when nothing's left to look at. A
 // database call that keeps failing stops the work, but what was done is
 // saved already, and still answered.
 export default async function indexFaces({ budgetMs, limit = Infinity }) {
   const startedAt = Date.now();
-  const totals = { scanned: 0, faces: 0, skipped: 0, done: false, error: null };
+  const totals = { scanned: 0, faces: 0, passed: 0, skipped: 0, done: false, error: null };
   try {
     await work();
   } catch (error) {
@@ -126,6 +130,7 @@ export default async function indexFaces({ budgetMs, limit = Infinity }) {
       const saved = await retried(() => recordFaces(ready));
       totals.scanned += saved.scanned;
       totals.faces += saved.faces;
+      totals.passed += ready.filter((s) => s.capped).length;
       if (isDev)
         console.log(`🙂 ${saved.scanned} images, ${saved.faces} faces (${totals.scanned} so far)`);
     }
@@ -133,7 +138,9 @@ export default async function indexFaces({ budgetMs, limit = Infinity }) {
 
   function report() {
     printLine();
-    console.log(`🙂 Faces: ${totals.scanned} images looked at, ${totals.faces} faces found`);
+    console.log(`🙂 Faces: ${totals.scanned} images looked at, ${totals.faces} faces kept`);
+    if (totals.passed)
+      console.log(`⏭️  ${totals.passed} of them passed over: the model has her story faces already`);
     if (totals.skipped)
       console.log(`⚠️  Couldn't fetch ${totals.skipped} images — they'll be tried next run`);
     if (totals.error) console.warn(`❌ Faces stopped early: ${totals.error}`);
