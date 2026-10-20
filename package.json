@@ -7,6 +7,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
-    "puppeteer-core": "^24.40.0"
+    "onnxruntime-node": "^1.20.1",
+    "puppeteer-core": "^24.40.0",
+    "sharp": "^0.33.5"
   }
 }

@@ -40,6 +40,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        env:
+          # onnxruntime-node (face fingerprints) would otherwise download its
+          # GPU (CUDA) libraries on Linux: hundreds of MB the runner can't use.
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
       - name: Install virtual display (Xvfb)
         run: sudo apt-get update && sudo apt-get install -y xvfb

@@ -5,6 +5,7 @@ import { login } from "./util/form-logger.js";
 import { getPrimaryAccount } from "./api/account.js";
 import { saveRun } from "./api/run.js";
 import archiveStories, { injectPageScripts } from "./scripts/story-archiver.js";
+import indexFaces from "./scripts/face-indexer.js";
 
 /* ===================== CONSTANTS ===================== */
 
@@ -46,6 +47,28 @@ const reloadEvery = Number(args["reload-every"]) || undefined;
 // slider method, which goes through those pages, stops at the limit.
 const guest = args.guest === true;
 
+// After the stories, faces are fingerprinted for the site's search by photo
+// (scripts/face-indexer.js): new images first, then the backlog, for up to
+// --faces-minutes — 30 on CI, where the hour allows it, 2 by hand; 0 skips
+// it. --faces-only does just that, without reading stories (and isn't
+// logged as a run); --faces-limit=N stops after N images, for trying it out.
+const facesMinutes = Number(args["faces-minutes"] ?? (process.env.CI === "true" ? 30 : 2));
+const facesOnly = args["faces-only"] === true;
+const facesLimit = Number(args["faces-limit"]) || Infinity;
+
+// Fingerprints faces within the budget; a failure is a warning, never the
+// run's: the stories are saved either way. Fills in `run` for the log.
+async function fingerprintFaces(run = {}) {
+  if (facesMinutes <= 0) return;
+  try {
+    const faces = await indexFaces({ budgetMs: facesMinutes * 60_000, limit: facesLimit });
+    run.facesScanned = faces.scanned;
+    run.facesFound = faces.faces;
+  } catch (error) {
+    console.warn(`⚠️ Faces skipped: ${error.message}`);
+  }
+}
+
 /* ===================== MAIN ===================== */
 
 async function launchBrowser(attempts = 2) {
@@ -74,6 +97,10 @@ async function launchBrowser(attempts = 2) {
 }
 
 async function main() {
+  if (facesOnly) {
+    await fingerprintFaces();
+    return;
+  }
   const startedAt = Date.now();
   // What the run did, for the scrape log (api/run.js); filled in as it goes.
   const run = { startedAt, slider, limit };
@@ -111,8 +138,10 @@ async function main() {
     process.exitCode = 1;
   } finally {
     await browser?.close();
+    // The run's time is the stories'; the faces come after, on their own.
     run.finishedAt = Date.now();
     run.dataMB = Number(getDataUsageMB());
+    await fingerprintFaces(run);
     await saveRun(run);
   }
 }

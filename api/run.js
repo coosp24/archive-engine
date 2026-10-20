@@ -24,6 +24,12 @@ export const saveRun = async (run) => {
     new_avatars: run.newAvatars ?? null,
     online_models: run.onlineModels ?? null,
     data_mb: run.dataMB ?? null,
+    // Only once faces have been fingerprinted (supabase/faces.sql adds
+    // these columns), so a run logs fine without them.
+    ...(run.facesScanned != null && {
+      faces_scanned: run.facesScanned,
+      faces_found: run.facesFound,
+    }),
   });
   if (error) console.warn(`⚠️ Failed to log the run: ${error.message}`);
 };
