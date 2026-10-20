@@ -28,17 +28,17 @@ drop index if exists public.online_sessions_last_seen_at_idx;
 
 /* ===================== HELPERS ===================== */
 
--- Refuses any time zone but the site's two.
-create or replace function public.analysis_check_tz(p_tz text)
-returns void
-language plpgsql
-immutable
+-- The site's first versions only allowed UTC and Cairo.
+drop function if exists public.analysis_check_tz(text);
+
+-- The viewer's time zone, by its IANA name ("Africa/Cairo"), if Postgres
+-- knows it; UTC if it doesn't, so an unusual name can't break the page.
+create or replace function public.analysis_tz(p_tz text)
+returns text
+language sql
+stable
 as $$
-begin
-  if p_tz is null or p_tz not in ('UTC', 'Africa/Cairo') then
-    raise exception 'p_tz must be UTC or Africa/Cairo';
-  end if;
-end;
+  select coalesce((select name from pg_timezone_names where name = p_tz limit 1), 'UTC');
 $$;
 
 /* ===================== HEADLINE ===================== */
@@ -68,17 +68,18 @@ $$;
 /* ===================== MODELS ===================== */
 
 -- How many models' accounts were created each year (account_created_at is
--- the id itself) in p_tz — 'UTC' or 'Africa/Cairo' — all time.
+-- the id itself) in p_tz — any IANA time zone, e.g. 'Africa/Cairo' — all time.
 create or replace function public.analysis_account_years(p_tz text default 'UTC')
 returns table (year int, models bigint)
 language plpgsql
 stable
 set search_path = public
 as $$
+declare
+  tz text := analysis_tz(p_tz);
 begin
-  perform analysis_check_tz(p_tz);
   return query
-  select extract(year from account_created_at at time zone p_tz)::int, count(*)
+  select extract(year from account_created_at at time zone tz)::int, count(*)
   from models group by 1 order by 1;
 end;
 $$;
@@ -133,5 +134,6 @@ $$;
 
 -- Read-only, and only over tables anyone can read already.
 grant execute on function public.analysis_totals() to anon, authenticated;
+grant execute on function public.analysis_tz(text) to anon, authenticated;
 grant execute on function public.analysis_account_years(text) to anon, authenticated;
 grant execute on function public.analysis_top(int) to anon, authenticated;
