@@ -20,6 +20,35 @@ export async function click(page, selector, timeout = 3000) {
   }
 }
 
+// coomeet's first screens: pick a gender, then accept the terms. Until
+// they're done the app never opens its connection, which fails the run as
+// "the app never opened its socket". On a slow machine (as on CI) they can
+// take a while to show, so each gets up to `timeout` — waiting on whichever
+// comes first, a screen to click or the app opening its socket, so a page
+// that's past them already (a reload once the choice is saved) isn't held up.
+const GENDER = ".gender-item.male";
+const TERMS = ".terms-actions button, .terms-actions div";
+
+export async function passIntro(page, timeout = 20000) {
+  await page
+    .waitForFunction(
+      (gender, terms) =>
+        document.querySelector(gender) ||
+        document.querySelector(terms) ||
+        window.__cooscrap?.socketOpened?.(),
+      { timeout },
+      GENDER,
+      TERMS,
+    )
+    .catch(() => {});
+  if (await page.$(GENDER)) {
+    await page.click(GENDER);
+    // The terms follow the gender choice.
+    await page.waitForSelector(TERMS, { timeout }).catch(() => {});
+  }
+  if (await page.$(TERMS)) await page.click(TERMS);
+}
+
 export async function type(page, selector, text) {
   try {
     await page.waitForSelector(selector);

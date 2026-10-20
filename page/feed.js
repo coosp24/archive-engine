@@ -75,7 +75,11 @@
 
   // Why the connection isn't ready, for the log when it doesn't open in time.
   const socketStatus = () => {
-    if (!socket) return "the app never opened its socket";
+    if (!socket) {
+      return document.querySelector(".gender-item")
+        ? "coomeet was still showing its gender screen"
+        : "the app never opened its socket";
+    }
     if (closeCode != null) return `coomeet closed the socket (code ${closeCode})`;
     if (socket.readyState === WebSocket.CONNECTING) return "the socket was still connecting";
     if (!authorized) return "the socket opened, but coomeet never authorized it";
@@ -142,6 +146,7 @@
   window.__cooscrap = {
     ...window.__cooscrap,
     feedReady: ready,
+    socketOpened: () => socket !== null,
     socketStatus,
     nextBatch,
     lookTimeouts: () => lookTimeouts,

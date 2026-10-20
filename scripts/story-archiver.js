@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { formatDuration, isDev, printLine } from "../util/helpers.js";
+import { formatDuration, isDev, passIntro, printLine } from "../util/helpers.js";
 import { getConfig, getPage, getDataUsageMB } from "../util/context.js";
 import { getKnownModels } from "../api/story.js";
 import { createBatchSaver } from "../util/batch-saver.js";
@@ -121,9 +121,12 @@ async function reload(count) {
 }
 
 // Waits for coomeet's connection to open and be authorized, reloading the
-// page while it doesn't (see FEED_READY_ATTEMPTS). Each failure logs why.
+// page while it doesn't (see FEED_READY_ATTEMPTS). Each attempt first gets
+// past the intro screens, in case they're showing again. Each failure logs
+// why.
 async function waitForFeed(page) {
   for (let attempt = 1; ; attempt++) {
+    await passIntro(page);
     try {
       await page.waitForFunction(() => window.__cooscrap.feedReady(), {
         timeout: FEED_READY_TIMEOUT,

@@ -1,5 +1,5 @@
 import puppeteer from "puppeteer-core";
-import { click } from "./util/helpers.js";
+import { passIntro } from "./util/helpers.js";
 import { getDataUsageMB, setContext } from "./util/context.js";
 import { login } from "./util/form-logger.js";
 import { getPrimaryAccount } from "./api/account.js";
@@ -84,8 +84,7 @@ async function main() {
     await setContext(page, CONFIG);
     await injectPageScripts(page);
     await page.goto(CONFIG.loginUrl, { waitUntil: "domcontentloaded" });
-    await click(page, ".gender-item.male");
-    await click(page, ".terms-actions button, .terms-actions div");
+    await passIntro(page);
 
     // A subscribed account gets the feed 20 stories a batch; a guest (and an
     // account without a subscription) 5 a batch. With no primary account in
