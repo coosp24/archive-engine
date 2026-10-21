@@ -3,9 +3,9 @@
 -- once in the Supabase SQL editor, after online.sql and runs.sql. Safe to
 -- re-run.
 --
--- The page shows the archive's totals, accounts by year created and the
--- models with the most stories, names and avatars, all time. (Its scrape
--- log reads the runs table directly.)
+-- The page shows the archive's totals, what it archived each day lately,
+-- accounts by year created and the models with the most stories, names and
+-- avatars, all time. (Its scrape log reads the runs table directly.)
 
 /* ===================== NO LONGER USED ===================== */
 
@@ -63,6 +63,43 @@ as $$
     'active_last_hour', (select count(*) from models where last_online_at >= now() - interval '1 hour'),
     'last_run', (select max(last_seen_at) from models)
   );
+$$;
+
+/* ===================== PER DAY ===================== */
+
+-- What the archive gained each day over the last p_days days (at most 90),
+-- up to today, as days in p_tz: new models, stories, names and avatars, by
+-- when the engine first saw them. Every day is listed, nothing new or not.
+create or replace function public.analysis_daily(p_days int default 30, p_tz text default 'UTC')
+returns table (day date, models bigint, stories bigint, names bigint, avatars bigint)
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  tz text := analysis_tz(p_tz);
+  today date := (now() at time zone tz)::date;
+  first_day date := today - (least(greatest(coalesce(p_days, 30), 1), 90) - 1);
+  since timestamptz := first_day::timestamp at time zone tz;
+begin
+  return query
+  with d as (select generate_series(first_day, today, interval '1 day')::date k),
+  m as (select (first_seen_at at time zone tz)::date k, count(*) n from models
+        where first_seen_at >= since group by 1),
+  s as (select (first_seen_at at time zone tz)::date k, count(*) n from stories
+        where first_seen_at >= since group by 1),
+  nm as (select (first_seen_at at time zone tz)::date k, count(*) n from names
+         where first_seen_at >= since group by 1),
+  a as (select (first_seen_at at time zone tz)::date k, count(*) n from avatars
+        where first_seen_at >= since group by 1)
+  select d.k, coalesce(m.n, 0), coalesce(s.n, 0), coalesce(nm.n, 0), coalesce(a.n, 0)
+  from d
+  left join m on m.k = d.k
+  left join s on s.k = d.k
+  left join nm on nm.k = d.k
+  left join a on a.k = d.k
+  order by d.k;
+end;
 $$;
 
 /* ===================== MODELS ===================== */
@@ -135,5 +172,6 @@ $$;
 -- Read-only, and only over tables anyone can read already.
 grant execute on function public.analysis_totals() to anon, authenticated;
 grant execute on function public.analysis_tz(text) to anon, authenticated;
+grant execute on function public.analysis_daily(int, text) to anon, authenticated;
 grant execute on function public.analysis_account_years(text) to anon, authenticated;
 grant execute on function public.analysis_top(int) to anon, authenticated;
