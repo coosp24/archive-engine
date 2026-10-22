@@ -202,6 +202,7 @@ async function archive({ page, account, limit, report }) {
 export default {
   id: "coomeet",
   method: "feed",
+  browser: true,
   archive,
   faces,
 };

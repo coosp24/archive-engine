@@ -24,7 +24,8 @@ Run, in order:
 4. `coomeet/schema.sql`
 5. `coomeet/faces.sql`
 6. `coomeet/analysis.sql`
-7. `shared/schedule.sql` (after storing the GitHub token it describes)
+7. `flirtbees/schema.sql`
+8. `shared/schedule.sql` (after storing the GitHub token it describes)
 
 ## Adding a site
 

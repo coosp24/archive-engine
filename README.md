@@ -38,6 +38,11 @@ src/
       saver.js           what's new, and what's only seen again
       session.js         its intro screens and login
       store.js           its tables (coomeet_*)
+    flirtbees/           its API, spoken directly: no browser
+      index.js           reading its stories feed
+      api.js             login (or a guest token), requests
+      story.js           a story as flirtbees sends it → as the archive keeps it
+      store.js           its tables (flirtbees_*)
 models/                  the face models (InsightFace buffalo_s)
 supabase/                the database: shared/ and one folder per site
 test/                    unit tests (node --test)
@@ -45,7 +50,7 @@ test/                    unit tests (node --test)
 
 ## Adding a site
 
-1. `src/sites/<site>/`: an `index.js` exporting `{ id, method, archive, faces }`. See `src/sites/index.js` for what each does, and coomeet for an example.
+1. `src/sites/<site>/`: an `index.js` exporting `{ id, method, browser, archive, faces }`. See `src/sites/index.js` for what each does. coomeet is an example of reading a site in a browser, flirtbees of talking to a site's API directly.
 2. List it in `src/sites/index.js`.
 3. `supabase/<site>/`: its own tables and functions, named `<site>_…`. See `supabase/README.md`.
 4. Its login, if it has one, in the `accounts` table with `site = '<site>'`.

@@ -50,14 +50,14 @@ export async function main(argv = process.argv.slice(2)) {
 
   for (const site of sites) {
     if (values["faces-only"]) {
-      await indexFaces(site.faces, faces);
+      if (site.faces) await indexFaces(site.faces, faces);
       continue;
     }
     const report = await runSite(site, { browser, guest: values.guest, limit: count(values, "limit", null) });
     // After the stories (the run's time is theirs), faces for the site's
     // search by photo. A failure there is a warning, never the run's: the
     // stories are saved either way.
-    if (facesMinutes > 0) {
+    if (site.faces && facesMinutes > 0) {
       try {
         const found = await indexFaces(site.faces, faces);
         report.facesScanned = found.scanned;
