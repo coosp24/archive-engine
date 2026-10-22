@@ -41,6 +41,16 @@ create table if not exists public.flirtbees_models (
   site_last_online_at timestamptz
 );
 
+-- Added after the table was first made: how much her stories are liked —
+-- for the site's Premium models (as coomeet's): the likes and points of all
+-- her stories, added up (flirtbees gives nothing else to tell). Kept up to
+-- date by flirtbees_record_story(); filled in here for those saved before.
+alter table public.flirtbees_models add column if not exists premium_score integer;
+update public.flirtbees_models m set premium_score = coalesce((
+  select sum(coalesce(s.likes, 0) + coalesce(s.points, 0)) from public.flirtbees_stories s where s.model_id = m.id
+), 0)
+where m.premium_score is null;
+
 -- Every name she has had, each once.
 create table if not exists public.flirtbees_names (
   id bigint generated always as identity primary key,
@@ -98,6 +108,9 @@ create index if not exists flirtbees_stories_model_id_published_at_idx
 -- For a "Recently active" filter.
 create index if not exists flirtbees_models_last_online_at_idx
   on public.flirtbees_models (last_online_at desc nulls last);
+-- For the Premium filter.
+create index if not exists flirtbees_models_premium_score_idx
+  on public.flirtbees_models (premium_score desc nulls last);
 
 /* ===================== ACCESS ===================== */
 
@@ -127,7 +140,8 @@ create policy "Anyone can read stories" on public.flirtbees_stories
 -- added to their collections if they're new there, the story added or, if
 -- it's saved already, its likes and points brought up to date, and her
 -- current_* brought up to date. A story only becomes her current one if
--- it's at least as new as the one there — the feed is shuffled.
+-- it's at least as new as the one there — the feed is shuffled. Her
+-- premium_score is worked out again from all her stories.
 --
 -- Answers which of them were new: { model, name, avatar, story }.
 create or replace function public.flirtbees_record_story(p jsonb)
@@ -195,6 +209,13 @@ begin
       or current_story_published_at is null
       or v_published >= current_story_published_at
     );
+
+  -- Her Premium score, with this story's likes and points as they are now.
+  update flirtbees_models m set premium_score = (
+    select coalesce(sum(coalesce(s.likes, 0) + coalesce(s.points, 0)), 0)
+    from flirtbees_stories s where s.model_id = v_model_id
+  )
+  where m.id = v_model_id;
 
   return jsonb_build_object(
     'model', new_model,
