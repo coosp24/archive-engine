@@ -48,6 +48,10 @@ src/
       api.js             a guest token from its socket, requests
       girl.js            a reel and a profile as mirami sends them → as the archive keeps them
       store.js           its tables (mirami_*)
+    luckycrush/          a signed-up man's recommended models, in a browser (Cloudflare)
+      index.js           signing in, reading the recommendations a few times
+      model.js           a recommended model → as the archive keeps her
+      store.js           its tables (luckycrush_*)
 models/                  the face models (InsightFace buffalo_s)
 supabase/                the database: shared/ and one folder per site
 test/                    unit tests (node --test)

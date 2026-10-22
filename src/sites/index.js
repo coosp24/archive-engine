@@ -1,5 +1,6 @@
 import coomeet from "./coomeet/index.js";
 import flirtbees from "./flirtbees/index.js";
+import luckycrush from "./luckycrush/index.js";
 import mirami from "./mirami/index.js";
 
 // Every site the engine archives. A site is a folder here, with its own
@@ -24,4 +25,4 @@ import mirami from "./mirami/index.js";
 //
 // The rest — the browser, the run's log, the faces, the schedule — is
 // shared (src/core/, src/db/, src/faces/).
-export const SITES = { coomeet, flirtbees, mirami };
+export const SITES = { coomeet, flirtbees, mirami, luckycrush };

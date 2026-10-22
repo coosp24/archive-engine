@@ -30,7 +30,10 @@ Run, in order:
 10. `mirami/schema.sql`
 11. `mirami/faces.sql`
 12. `mirami/analysis.sql`
-13. `shared/schedule.sql` (after storing the GitHub token it describes)
+13. `luckycrush/schema.sql`
+14. `luckycrush/faces.sql`
+15. `luckycrush/analysis.sql`
+16. `shared/schedule.sql` (after storing the GitHub token it describes)
 
 ## Adding a site
 
