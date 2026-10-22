@@ -29,7 +29,6 @@ create table if not exists public.runs (
   new_stories integer,
   new_names integer,
   new_avatars integer,
-  online_models integer,
   data_mb numeric
 );
 

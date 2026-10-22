@@ -1,7 +1,6 @@
 -- The site's analysis page: read-only summaries of the archive, worked out
 -- here so the page fetches a few dozen numbers instead of every row. Run
--- once in the Supabase SQL editor, after online.sql and runs.sql. Safe to
--- re-run.
+-- once in the Supabase SQL editor, after runs.sql. Safe to re-run.
 --
 -- The page shows the archive's totals, what it archived each day lately,
 -- accounts by year created and the models with the most stories, names and
@@ -44,7 +43,7 @@ $$;
 /* ===================== HEADLINE ===================== */
 
 -- The archive as it is now: { models, stories, names, avatars, renamed,
--- new_avatar, active_last_hour, last_run }.
+-- new_avatar, last_run }.
 create or replace function public.analysis_totals()
 returns jsonb
 language sql
@@ -59,8 +58,6 @@ as $$
     -- Models that have had more than one name, or avatar.
     'renamed', (select count(*) from (select 1 from names group by model_id having count(*) > 1) x),
     'new_avatar', (select count(*) from (select 1 from avatars group by model_id having count(*) > 1) x),
-    -- Seen online in the last hour, as the site's "Recently active".
-    'active_last_hour', (select count(*) from models where last_online_at >= now() - interval '1 hour'),
     'last_run', (select max(last_seen_at) from models)
   );
 $$;

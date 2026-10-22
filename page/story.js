@@ -64,12 +64,11 @@
     return null;
   };
 
-  // { src, id, name, avatar, published, storyId, preview, online } for the
-  // story on screen; all but src are null while they're unknown. `published`
-  // is epoch ms, from the story's data — the screen only says "today" or
+  // { src, id, name, avatar, published, storyId, preview } for the story on
+  // screen; all but src are null while they're unknown. `published` is epoch
+  // ms, from the story's data — the screen only says "today" or
   // "yesterday". `avatar` is her profile picture, `storyId` coomeet's id for
-  // the story, `preview` its still image and `online` whether she's online
-  // (the green dot by her avatar), all from the same data.
+  // the story and `preview` its still image, all from the same data.
   const currentStory = () => {
     const video = document.querySelector(VIDEO);
     const src = video?.currentSrc || video?.src || null;
@@ -82,7 +81,6 @@
       published: owner?.published ?? null,
       storyId: owner?.storyId ?? null,
       preview: owner?.preview ?? null,
-      online: owner?.online ?? null,
     };
   };
 

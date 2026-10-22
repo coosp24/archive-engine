@@ -3,7 +3,8 @@
 -- models holds each model as she is now; names, avatars and stories collect
 -- every value she has ever been seen with — the current one included, each
 -- once — so a model's page can list them all from those tables alone.
--- online_sessions holds when she's been seen online (see online.sql).
+-- balances holds every balance she's had, a row each time it changes
+-- (see media-balance.sql).
 --
 -- Everyone can read; only the engine writes, with the secret key (which
 -- bypasses RLS), through record_story() below.
@@ -26,8 +27,9 @@ create table public.models (
   current_story_published_at timestamptz,
   first_seen_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now(),
-  -- The last time a run saw her online.
-  last_online_at timestamptz
+  -- The minutes a viewer needs to add her as a friend, as coomeet last
+  -- sent it: high while she's popular, falling as that fades.
+  current_balance smallint
 );
 
 -- Every name she has had, each once.
@@ -58,7 +60,11 @@ create table public.stories (
   -- Its still image, on the same CDN.
   preview text,
   published_at timestamptz,
-  first_seen_at timestamptz not null default now()
+  first_seen_at timestamptz not null default now(),
+  -- The video as MP4, and a small animated WebP of it (coomeet calls it
+  -- gif): CDN addresses of their own, not the webm's with another extension.
+  mp4 text,
+  gif text
 );
 
 alter table public.models
@@ -68,19 +74,20 @@ alter table public.models
 create index stories_model_id_published_at_idx
   on public.stories (model_id, published_at desc);
 
--- Each stretch of runs that saw her online in a row: online from started_at
--- to last_seen_at, at an hour's resolution.
-create table public.online_sessions (
+-- Every balance she's had: a row each time it changes, so a value can come
+-- back (60, 46, 60 is three rows).
+create table public.balances (
   id bigint generated always as identity primary key,
   model_id bigint not null references public.models (id) on delete cascade,
-  started_at timestamptz not null default now(),
-  last_seen_at timestamptz not null default now()
+  balance smallint not null,
+  seen_at timestamptz not null default now()
 );
 
-create index online_sessions_model_id_started_at_idx
-  on public.online_sessions (model_id, started_at desc);
-create index models_last_online_at_idx
-  on public.models (last_online_at desc nulls last);
+create index balances_model_id_seen_at_idx
+  on public.balances (model_id, seen_at desc);
+-- For a "best models" list, highest balance first.
+create index models_current_balance_idx
+  on public.models (current_balance desc nulls last);
 
 /* ===================== ACCESS ===================== */
 
@@ -88,7 +95,7 @@ alter table public.models enable row level security;
 alter table public.names enable row level security;
 alter table public.avatars enable row level security;
 alter table public.stories enable row level security;
-alter table public.online_sessions enable row level security;
+alter table public.balances enable row level security;
 
 create policy "Anyone can read models" on public.models
   for select to anon, authenticated using (true);
@@ -98,63 +105,29 @@ create policy "Anyone can read avatars" on public.avatars
   for select to anon, authenticated using (true);
 create policy "Anyone can read stories" on public.stories
   for select to anon, authenticated using (true);
-create policy "Anyone can read online sessions" on public.online_sessions
+create policy "Anyone can read balances" on public.balances
   for select to anon, authenticated using (true);
 
 /* ===================== WRITING ===================== */
 
--- Marks a model as seen by this run, online or not (null: the run couldn't
--- tell). Seen online when her last sighting was online too — last_online_at
--- is last_seen_at — the same session goes on; otherwise a new one starts.
--- That last sighting also has to be recent (90 minutes: an hourly run, give
--- or take a late start), so a run that never happened doesn't join two
--- sessions into one.
-create or replace function public.mark_seen(
-  p_model_id bigint,
-  p_online boolean
-) returns void
-language plpgsql
+-- Marks a model as seen by this run.
+create or replace function public.mark_seen(p_model_id bigint)
+returns void
+language sql
 set search_path = public
 as $$
-declare
-  was_seen timestamptz;
-  was_online timestamptz;
-begin
-  select last_seen_at, last_online_at into was_seen, was_online
-  from models where id = p_model_id
-  for update;
-  if not found then
-    return;
-  end if;
-
-  if p_online then
-    if was_online = was_seen and was_seen > now() - interval '90 minutes' then
-      update online_sessions set last_seen_at = now()
-      where id = (
-        select id from online_sessions
-        where model_id = p_model_id
-        order by started_at desc
-        limit 1
-      );
-    else
-      insert into online_sessions (model_id) values (p_model_id);
-    end if;
-  end if;
-
-  update models set
-    last_seen_at = now(),
-    last_online_at = case when p_online then now() else last_online_at end
-  where id = p_model_id;
-end;
+  update models set last_seen_at = now() where id = p_model_id;
 $$;
 
 -- Records one story as the engine saw it, in one round trip: her model row
--- (created on first sight) marked seen, online or not, her name, avatar and
--- story added to their collections if they're new there, and her current_*
--- brought up to date. A story only becomes her current one if it's at least
--- as new as the one there — the feed isn't in date order.
+-- (created on first sight) marked seen, her name, avatar and story added to
+-- their collections if they're new there, her balance added to its
+-- timeline if it changed, and her current_* brought up to date. A story only
+-- becomes her current one if it's at least as new as the one there — the
+-- feed isn't in date order. A story already saved gets its mp4 and gif if
+-- it has none (it was saved before they were kept); they're never replaced.
 --
--- Answers which of them were new: { model, name, avatar, story }.
+-- Answers which of them were new: { model, name, avatar, story, balance }.
 create or replace function public.record_story(
   p_model_id bigint,
   p_name text,
@@ -163,7 +136,9 @@ create or replace function public.record_story(
   p_story text,
   p_preview text,
   p_published_at timestamptz,
-  p_online boolean default null
+  p_mp4 text default null,
+  p_gif text default null,
+  p_balance smallint default null
 ) returns jsonb
 language plpgsql
 set search_path = public
@@ -173,11 +148,12 @@ declare
   new_name boolean := false;
   new_avatar boolean := false;
   new_story boolean;
+  new_balance boolean := false;
 begin
   insert into models (id) values (p_model_id)
   on conflict (id) do nothing;
   new_model := found;
-  perform mark_seen(p_model_id, p_online);
+  perform mark_seen(p_model_id);
 
   -- FOUND is false when on conflict do nothing skipped the row.
   if p_name is not null then
@@ -192,10 +168,28 @@ begin
     new_avatar := found;
   end if;
 
-  insert into stories (id, model_id, story, preview, published_at)
-  values (p_story_id, p_model_id, p_story, p_preview, p_published_at)
+  insert into stories (id, model_id, story, preview, published_at, mp4, gif)
+  values (p_story_id, p_model_id, p_story, p_preview, p_published_at, p_mp4, p_gif)
   on conflict do nothing;
   new_story := found;
+
+  if not new_story and (p_mp4 is not null or p_gif is not null) then
+    update stories set
+      mp4 = coalesce(mp4, p_mp4),
+      gif = coalesce(gif, p_gif)
+    where id = p_story_id
+      and (mp4 is null or gif is null);
+  end if;
+
+  if p_balance is not null then
+    update models set current_balance = p_balance
+    where id = p_model_id
+      and current_balance is distinct from p_balance;
+    new_balance := found;
+    if new_balance then
+      insert into balances (model_id, balance) values (p_model_id, p_balance);
+    end if;
+  end if;
 
   update models set
     current_name = coalesce(p_name, current_name),
@@ -218,19 +212,19 @@ begin
     'model', new_model,
     'name', new_name,
     'avatar', new_avatar,
-    'story', new_story
+    'story', new_story,
+    'balance', new_balance
   );
 end;
 $$;
 
--- Saves many stories in one round trip (see supabase/record-stories.sql),
--- and marks as seen again the models the engine skipped because nothing
--- about them had changed: p_seen, of which p_seen_online were online. When
--- p_seen_online is null, no status is recorded for them.
+-- Saves many stories in one round trip, and marks as seen again the models
+-- the engine skipped because nothing about them had changed (p_seen).
+-- p_stories: [{ model_id, name, avatar, story_id, story, preview,
+-- published_at, mp4, gif, balance }].
 create or replace function public.record_stories(
   p_stories jsonb,
-  p_seen bigint[] default '{}',
-  p_seen_online bigint[] default null
+  p_seen bigint[] default '{}'
 ) returns jsonb
 language plpgsql
 set search_path = public
@@ -238,9 +232,8 @@ as $$
 declare
   item jsonb;
   result jsonb;
-  totals jsonb := jsonb_build_object('model', 0, 'name', 0, 'avatar', 0, 'story', 0);
+  totals jsonb := jsonb_build_object('model', 0, 'name', 0, 'avatar', 0, 'story', 0, 'balance', 0);
   kind text;
-  seen_id bigint;
 begin
   for item in select * from jsonb_array_elements(coalesce(p_stories, '[]'::jsonb)) loop
     result := record_story(
@@ -251,37 +244,33 @@ begin
       item->>'story',
       item->>'preview',
       (item->>'published_at')::timestamptz,
-      (item->>'online')::boolean
+      item->>'mp4',
+      item->>'gif',
+      (item->>'balance')::smallint
     );
-    foreach kind in array array['model', 'name', 'avatar', 'story'] loop
+    foreach kind in array array['model', 'name', 'avatar', 'story', 'balance'] loop
       if (result->>kind)::boolean then
         totals := jsonb_set(totals, array[kind], to_jsonb((totals->>kind)::int + 1));
       end if;
     end loop;
   end loop;
 
-  foreach seen_id in array coalesce(p_seen, '{}') loop
-    perform mark_seen(
-      seen_id,
-      case when p_seen_online is null then null else seen_id = any(p_seen_online) end
-    );
-  end loop;
+  update models set last_seen_at = now() where id = any(coalesce(p_seen, '{}'));
 
   return totals;
 end;
 $$;
 
 -- Only the engine (secret key = service_role) may write.
-revoke execute on function public.mark_seen(bigint, boolean)
+revoke execute on function public.mark_seen(bigint)
   from public, anon, authenticated;
 revoke execute on function
-  public.record_story(bigint, text, text, bigint, text, text, timestamptz, boolean)
+  public.record_story(bigint, text, text, bigint, text, text, timestamptz, text, text, smallint)
   from public, anon, authenticated;
-revoke execute on function public.record_stories(jsonb, bigint[], bigint[])
+revoke execute on function public.record_stories(jsonb, bigint[])
   from public, anon, authenticated;
-grant execute on function public.mark_seen(bigint, boolean) to service_role;
+grant execute on function public.mark_seen(bigint) to service_role;
 grant execute on function
-  public.record_story(bigint, text, text, bigint, text, text, timestamptz, boolean)
+  public.record_story(bigint, text, text, bigint, text, text, timestamptz, text, text, smallint)
   to service_role;
-grant execute on function public.record_stories(jsonb, bigint[], bigint[])
-  to service_role;
+grant execute on function public.record_stories(jsonb, bigint[]) to service_role;

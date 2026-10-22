@@ -69,10 +69,6 @@
     return typeof key === "string" && /^[\w.-]+$/.test(key) ? CDN + key : null;
   };
 
-  // Whether she's online, from the same object: coomeet sends `online: 0 | 1`
-  // on a story in its feed. Not in cooscrap-tool.
-  const onlineIn = (obj) => (obj.online == null ? null : Number(obj.online) === 1);
-
   // Who an object names, with whatever else it says about her and her story.
   const owner = (id, obj) => ({
     id: String(id),
@@ -81,7 +77,6 @@
     published: publishedIn(obj),
     storyId: storyIdIn(obj),
     preview: previewIn(obj),
-    online: onlineIn(obj),
   });
 
   // The video's file name without its extension: the part that's the same in
@@ -110,7 +105,6 @@
               // `her` is the person object, so the story's are on `obj`.
               storyId: storyIdIn(obj),
               preview: previewIn(obj),
-              online: her.online ?? onlineIn(obj),
             };
           }
         }

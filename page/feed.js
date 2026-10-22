@@ -87,11 +87,19 @@
   };
 
   // The fields the archive keeps, from a story as the server sends it:
-  // { avatar: { s, m }, name, media: { webm, preview, … }, publicationTime,
-  //   womanId, id, online }. Shaped like page/story.js's currentStory().
-  // `online` is 1 while she's online — what the stories page draws the green
-  // dot beside her avatar from.
+  // { avatar: { s, m }, name, media: { webm, mp4, gif, preview }, balance,
+  //   publicationTime, womanId, id }. Shaped like page/story.js's
+  // currentStory(), plus what only the feed has: the video as MP4 (`mp4`), a
+  // small animated WebP of it (`gif`, despite the name) — each a key of its
+  // own, not the webm's with another extension — and `balance`, the minutes
+  // a viewer needs to add her as a friend, which follows how popular she is.
   const cdn = (key) => (typeof key === "string" && /^[\w.-]+$/.test(key) ? CDN + key : null);
+  // A smallint in the database; anything else (missing, "", a fraction) is
+  // left unknown rather than read as 0.
+  const balanceIn = (value) => {
+    const n = typeof value === "string" && value.trim() ? Number(value) : value;
+    return Number.isInteger(n) && n >= 0 && n <= 32767 ? n : null;
+  };
 
   // coomeet sends some names HTML-escaped — "Hazel&lt;3" for what its pages
   // show as "Hazel<3". A <textarea> decodes every kind of escape and never
@@ -112,7 +120,9 @@
     storyId: s.id == null ? null : String(s.id),
     src: cdn(s.media?.webm),
     preview: cdn(s.media?.preview),
-    online: s.online == null ? null : Number(s.online) === 1,
+    mp4: cdn(s.media?.mp4),
+    gif: cdn(s.media?.gif),
+    balance: balanceIn(s.balance),
   });
 
   // Marks as viewed the batch before (`toLook`: { id, storyId } pairs) and

@@ -9,28 +9,33 @@ const SEEN_BATCH_SIZE = 1000;
 const ATTEMPTS = 3;
 const RETRY_DELAY = 2000;
 
-const PLURAL = { model: "models", name: "names", avatar: "avatars", story: "stories" };
+const PLURAL = {
+  model: "models",
+  name: "names",
+  avatar: "avatars",
+  story: "stories",
+  balance: "balances",
+};
 
 // Saves stories in batches, in the background: add() never waits on the
 // database, so the run moves on to the next story at once. Batches are sent
 // one after another, in order, and flush() waits for all of them.
 //
 // `known` is every model as the archive has her now (getKnownModels). A
-// story that would change nothing — her current story, under the same name
-// and avatar — isn't sent at all; she's only marked as seen again, online
-// or not.
+// story that would change nothing — her current story, under the same name,
+// avatar and balance, already with its MP4 — isn't sent at all; she's only
+// marked as seen again.
 export function createBatchSaver(known) {
   let pending = [];
   let seen = new Set();
-  let seenOnline = new Set();
   let sending = Promise.resolve();
   const stats = { queued: 0, skipped: 0, saved: 0, failed: 0 };
-  const added = { model: 0, name: 0, avatar: 0, story: 0 };
+  const added = { model: 0, name: 0, avatar: 0, story: 0, balance: 0 };
 
-  async function send(stories, seenIds, onlineIds) {
+  async function send(stories, seenIds) {
     for (let attempt = 1; ; attempt++) {
       try {
-        const isNew = await recordStories(stories, seenIds, onlineIds);
+        const isNew = await recordStories(stories, seenIds);
         for (const kind of Object.keys(added)) added[kind] += isNew[kind] ?? 0;
         stats.saved += stories.length;
         if (isDev && stories.length) {
@@ -56,11 +61,9 @@ export function createBatchSaver(known) {
     if (pending.length || seen.size) {
       const stories = pending;
       const seenIds = [...seen];
-      const onlineIds = [...seenOnline];
       pending = [];
       seen = new Set();
-      seenOnline = new Set();
-      sending = sending.then(() => send(stories, seenIds, onlineIds));
+      sending = sending.then(() => send(stories, seenIds));
     }
     return sending;
   }
@@ -69,18 +72,26 @@ export function createBatchSaver(known) {
   // skipped because the archive already has it as it is.
   function add(story) {
     const was = known.get(story.id);
-    // A name or avatar the run couldn't read keeps what's stored.
+    // A name, avatar or balance the run couldn't read keeps what's stored.
     const now = {
       name: story.name ?? was?.name ?? null,
       avatar: story.avatar ?? was?.avatar ?? null,
       storyId: story.storyId,
+      balance: story.balance ?? was?.balance ?? null,
+      hasMp4: Boolean(story.mp4) || (was?.storyId === story.storyId && Boolean(was?.hasMp4)),
     };
+    // Her current story without its MP4 was saved before the archive kept
+    // MP4s: sending it again fills that in.
     const unchanged =
-      was && was.storyId === now.storyId && was.name === now.name && was.avatar === now.avatar;
+      was &&
+      was.storyId === now.storyId &&
+      was.name === now.name &&
+      was.avatar === now.avatar &&
+      was.balance === now.balance &&
+      (was.hasMp4 || !story.mp4);
 
     if (unchanged) {
       seen.add(story.id);
-      if (story.online) seenOnline.add(story.id);
       stats.skipped++;
     } else {
       pending.push(story);
