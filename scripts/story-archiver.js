@@ -166,6 +166,8 @@ export default async function archive({
   let count = 0;
   let missingOwner = 0;
   let unsaveable = 0;
+  // The models seen online, each once (she can have more than one story).
+  const online = new Set();
 
   // What the archive already has, so stories that would change nothing
   // aren't sent; the rest are saved in batches while the run moves on.
@@ -196,6 +198,7 @@ export default async function archive({
   function record(story) {
     count++;
     if (!story.id) missingOwner++;
+    if (story.id && story.online) online.add(story.id);
 
     // A story without her id can't be filed under anyone, nor one without
     // its own id (the stories table's key), so those are only counted.
@@ -224,6 +227,7 @@ export default async function archive({
         console.log(`🎥 MP4:       ${story.mp4 ?? "unknown"}`);
         console.log(`🌀 GIF:       ${story.gif ?? "unknown"}`);
         console.log(`💰 Balance:   ${story.balance ?? "unknown"}`);
+        console.log(`🟢 Online:    ${story.online == null ? "unknown" : story.online ? "yes" : "no"}`);
       }
       console.log(outcome);
     }
@@ -337,6 +341,7 @@ export default async function archive({
   console.log(`🆕 New names:       ${added.name}`);
   console.log(`🆕 New avatars:     ${added.avatar}`);
   console.log(`💰 Balance changes: ${added.balance}`);
+  console.log(`🟢 Online:          ${online.size} models`);
   console.log(`⚠️  Failed to save:  ${stats.failed + unsaveable}`);
   if (!slider) {
     const unanswered = await getPage()

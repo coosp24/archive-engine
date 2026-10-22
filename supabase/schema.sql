@@ -30,7 +30,10 @@ create table public.models (
   current_balance smallint,
   -- The highest balance she's been seen with: how popular she's ever been.
   -- Premium, on the site, once it's above 10 (coomeet's floor).
-  peak_balance smallint
+  peak_balance smallint,
+  -- When a run last saw her online — cleared as soon as one sees her
+  -- offline. The site calls her active while it's within the last hour.
+  last_online_at timestamptz
 );
 
 -- Every name she has had, each once.
@@ -76,6 +79,9 @@ create index stories_model_id_published_at_idx
   on public.stories (model_id, published_at desc);
 
 -- For the site's Premium list, highest peak first.
+-- For the site's "Recently active" filter.
+create index models_last_online_at_idx
+  on public.models (last_online_at desc nulls last);
 create index models_peak_balance_idx
   on public.models (peak_balance desc nulls last);
 
@@ -97,17 +103,23 @@ create policy "Anyone can read stories" on public.stories
 
 /* ===================== WRITING ===================== */
 
--- Marks a model as seen by this run.
-create or replace function public.mark_seen(p_model_id bigint)
+-- Marks a model as seen by this run, and online (now) or offline (no
+-- longer: cleared at once, not left to run out its hour) when the run could
+-- tell — p_online null leaves it as it was.
+create or replace function public.mark_seen(p_model_id bigint, p_online boolean default null)
 returns void
 language sql
 set search_path = public
 as $$
-  update models set last_seen_at = now() where id = p_model_id;
+  update models set
+    last_seen_at = now(),
+    last_online_at = case p_online when true then now() when false then null else last_online_at end
+  where id = p_model_id;
 $$;
 
 -- Records one story as the engine saw it, in one round trip: her model row
--- (created on first sight) marked seen, her name, avatar and story added to
+-- (created on first sight) marked seen — online or offline, if p_online
+-- says (see mark_seen) — her name, avatar and story added to
 -- their collections if they're new there, her balance and (if it's a new
 -- high) her peak balance kept, and her current_* brought up to date. A
 -- story only becomes her current one if it's at least as new as the one
@@ -126,7 +138,8 @@ create or replace function public.record_story(
   p_published_at timestamptz,
   p_mp4 text default null,
   p_gif text default null,
-  p_balance smallint default null
+  p_balance smallint default null,
+  p_online boolean default null
 ) returns jsonb
 language plpgsql
 set search_path = public
@@ -141,7 +154,7 @@ begin
   insert into models (id) values (p_model_id)
   on conflict (id) do nothing;
   new_model := found;
-  perform mark_seen(p_model_id);
+  perform mark_seen(p_model_id, p_online);
 
   -- FOUND is false when on conflict do nothing skipped the row.
   if p_name is not null then
@@ -206,12 +219,15 @@ end;
 $$;
 
 -- Saves many stories in one round trip, and marks as seen again the models
--- the engine skipped because nothing about them had changed (p_seen).
--- p_stories: [{ model_id, name, avatar, story_id, story, preview,
--- published_at, mp4, gif, balance }].
+-- the engine skipped because nothing about them had changed (p_seen): those
+-- in p_seen_online as online, those in p_seen_offline as offline, the rest
+-- as they were. p_stories: [{ model_id, name, avatar, story_id, story,
+-- preview, published_at, mp4, gif, balance, online }].
 create or replace function public.record_stories(
   p_stories jsonb,
-  p_seen bigint[] default '{}'
+  p_seen bigint[] default '{}',
+  p_seen_online bigint[] default '{}',
+  p_seen_offline bigint[] default '{}'
 ) returns jsonb
 language plpgsql
 set search_path = public
@@ -233,7 +249,8 @@ begin
       (item->>'published_at')::timestamptz,
       item->>'mp4',
       item->>'gif',
-      (item->>'balance')::smallint
+      (item->>'balance')::smallint,
+      (item->>'online')::boolean
     );
     foreach kind in array array['model', 'name', 'avatar', 'story', 'balance'] loop
       if (result->>kind)::boolean then
@@ -242,22 +259,29 @@ begin
     end loop;
   end loop;
 
-  update models set last_seen_at = now() where id = any(coalesce(p_seen, '{}'));
+  update models set
+    last_seen_at = now(),
+    last_online_at = case
+      when id = any(coalesce(p_seen_online, '{}')) then now()
+      when id = any(coalesce(p_seen_offline, '{}')) then null
+      else last_online_at
+    end
+  where id = any(coalesce(p_seen, '{}'));
 
   return totals;
 end;
 $$;
 
 -- Only the engine (secret key = service_role) may write.
-revoke execute on function public.mark_seen(bigint)
+revoke execute on function public.mark_seen(bigint, boolean)
   from public, anon, authenticated;
 revoke execute on function
-  public.record_story(bigint, text, text, bigint, text, text, timestamptz, text, text, smallint)
+  public.record_story(bigint, text, text, bigint, text, text, timestamptz, text, text, smallint, boolean)
   from public, anon, authenticated;
-revoke execute on function public.record_stories(jsonb, bigint[])
+revoke execute on function public.record_stories(jsonb, bigint[], bigint[], bigint[])
   from public, anon, authenticated;
-grant execute on function public.mark_seen(bigint) to service_role;
+grant execute on function public.mark_seen(bigint, boolean) to service_role;
 grant execute on function
-  public.record_story(bigint, text, text, bigint, text, text, timestamptz, text, text, smallint)
+  public.record_story(bigint, text, text, bigint, text, text, timestamptz, text, text, smallint, boolean)
   to service_role;
-grant execute on function public.record_stories(jsonb, bigint[]) to service_role;
+grant execute on function public.record_stories(jsonb, bigint[], bigint[], bigint[]) to service_role;

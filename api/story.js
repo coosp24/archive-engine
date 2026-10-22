@@ -1,14 +1,15 @@
 import supabase from "../util/supabase.js";
 
 // Saves a batch of stories as the run saw them, and marks the models in
-// `seen` as seen again, in one round trip (see record_stories in
-// supabase/media-balance.sql). Answers how many of each were new to the
+// `seen` as seen again — those in `seenOnline` online, those in
+// `seenOffline` offline — in one round trip (see record_stories in
+// supabase/online-status.sql). Answers how many of each were new to the
 // archive: { model, name, avatar, story, balance } — `balance` counting
 // balances that changed.
-export const recordStories = async (stories, seen = []) => {
+export const recordStories = async (stories, seen = [], seenOnline = [], seenOffline = []) => {
   const { data, error } = await supabase.rpc("record_stories", {
     p_stories: stories.map(
-      ({ id, name, avatar, storyId, src, preview, published, mp4, gif, balance }) => ({
+      ({ id, name, avatar, storyId, src, preview, published, mp4, gif, balance, online }) => ({
         model_id: id,
         name,
         avatar,
@@ -19,9 +20,12 @@ export const recordStories = async (stories, seen = []) => {
         mp4: mp4 ?? null,
         gif: gif ?? null,
         balance: balance ?? null,
+        online: online ?? null,
       }),
     ),
     p_seen: seen,
+    p_seen_online: seenOnline,
+    p_seen_offline: seenOffline,
   });
 
   if (error) throw new Error(error.message);

@@ -88,11 +88,12 @@
 
   // The fields the archive keeps, from a story as the server sends it:
   // { avatar: { s, m }, name, media: { webm, mp4, gif, preview }, balance,
-  //   publicationTime, womanId, id }. Shaped like page/story.js's
+  //   online, publicationTime, womanId, id }. Shaped like page/story.js's
   // currentStory(), plus what only the feed has: the video as MP4 (`mp4`), a
   // small animated WebP of it (`gif`, despite the name) — each a key of its
   // own, not the webm's with another extension — and `balance`, the minutes
-  // a viewer needs to add her as a friend, which follows how popular she is.
+  // a viewer needs to add her as a friend, which follows how popular she is —
+  // and `online`, 1 while she's online (coomeet's green dot).
   const cdn = (key) => (typeof key === "string" && /^[\w.-]+$/.test(key) ? CDN + key : null);
   // A smallint in the database; anything else (missing, "", a fraction) is
   // left unknown rather than read as 0.
@@ -123,6 +124,7 @@
     mp4: cdn(s.media?.mp4),
     gif: cdn(s.media?.gif),
     balance: balanceIn(s.balance),
+    online: s.online == null ? null : Number(s.online) === 1,
   });
 
   // Marks as viewed the batch before (`toLook`: { id, storyId } pairs) and
