@@ -60,6 +60,14 @@ create table if not exists public.mirami_models (
 
 -- Added after the table was first made.
 alter table public.mirami_models add column if not exists profile_name text;
+-- How much viewers give her, for the site's "Top" models (as coomeet's
+-- Premium): a like is free, a favourite a commitment, a gift costs money —
+-- so likes + 5 × favourites + 20 × gifts. Worked out by the database from
+-- the counts, as they're brought up to date.
+alter table public.mirami_models add column if not exists top_score integer
+  generated always as (
+    coalesce(likes_count, 0) + 5 * coalesce(favourites_count, 0) + 20 * coalesce(gifts_count, 0)
+  ) stored;
 
 -- Every name she has had, each once.
 create table if not exists public.mirami_names (
@@ -142,6 +150,11 @@ create index if not exists mirami_photos_model_id_posted_at_idx
 -- For a "Recently active" filter.
 create index if not exists mirami_models_last_online_at_idx
   on public.mirami_models (last_online_at desc nulls last);
+-- For the Top filter and her rank, and the country filter.
+create index if not exists mirami_models_top_score_idx
+  on public.mirami_models (top_score desc);
+create index if not exists mirami_models_country_idx
+  on public.mirami_models (country);
 
 /* ===================== ACCESS ===================== */
 
@@ -167,6 +180,24 @@ drop policy if exists "Anyone can read photos" on public.mirami_photos;
 create policy "Anyone can read photos" on public.mirami_photos
   for select to anon, authenticated using (true);
 
+/* ===================== READING ===================== */
+
+-- The countries the models say they're from, with how many say each, most
+-- first: the site's country filter.
+create or replace function public.mirami_countries()
+returns table (country text, models bigint)
+language sql
+stable
+set search_path = public
+as $$
+  select country, count(*) from mirami_models
+  where country is not null
+  group by country
+  order by count(*) desc, country;
+$$;
+
+grant execute on function public.mirami_countries() to anon, authenticated;
+
 /* ===================== WRITING ===================== */
 
 -- Records one reel as the engine saw it, in one round trip: her model row
@@ -174,7 +205,8 @@ create policy "Anyone can read photos" on public.mirami_photos
 -- at once) — with what mirami says of her brought up to date, her name and
 -- avatar added to their collections if they're new there, the reel added
 -- or, if it's saved already, its likes brought up to date, and her
--- current_* moved to it if it's her newest (highest id).
+-- current_* moved to it if it's her newest (highest id). Without a story_id
+-- it records just her: a girl from mirami's lists, with no reel.
 --
 -- Answers which of them were new: { model, name, avatar, story }.
 create or replace function public.mirami_record_story(p jsonb)
@@ -228,6 +260,10 @@ begin
     new_avatar := found;
   end if;
 
+  if v_story_id is null then
+    return jsonb_build_object('model', new_model, 'name', new_name, 'avatar', new_avatar, 'story', false);
+  end if;
+
   insert into mirami_stories (id, model_id, story, preview, likes)
   values (v_story_id, v_model_id, p->>'story', p->>'preview', (p->>'likes')::int)
   on conflict do nothing;
@@ -257,7 +293,8 @@ begin
 end;
 $$;
 
--- Saves many reels in one round trip, each through mirami_record_story().
+-- Saves many reels (and girls without one) in one round trip, each through
+-- mirami_record_story().
 -- p_stories: [{ model_id, ref_code, name, profile_name, avatar, online,
 -- site_last_visit_at, country, birthday, age, verified, about, likes_count,
 -- favourites_count, gifts_count, shows_count, story_id, story, preview,

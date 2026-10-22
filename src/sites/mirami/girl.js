@@ -102,6 +102,29 @@ export function shapePhoto(p, modelId) {
   };
 }
 
+// A girl as one of mirami's lists sends her, without a reel — the directory
+// and those online ({ id, nick, ref_code, avatar_url, age, birthday,
+// is_verify, status, country: { iso } }) or a rating's user ({ id, nick,
+// refCode, avatarUrl, age, country: "UA", statusOnline }) — in the shape of
+// shapeReel, its reel's fields null.
+export function shapeListed(g) {
+  const country = typeof g.country === "string" ? g.country : g.country?.iso;
+  return {
+    modelId: id(g.id),
+    refCode: text(g.ref_code ?? g.refCode),
+    name: text(g.nick),
+    profileName: null,
+    avatar: text(g.avatar_url ?? g.avatarUrl),
+    country: text(country)?.toUpperCase() ?? null,
+    age: count(g.age),
+    online: onlineFrom(g.status ?? g.statusOnline),
+    storyId: null,
+    src: null,
+    preview: null,
+    likes: null,
+  };
+}
+
 // A reel, with what her profile and mirami's girls lists say of her laid
 // over what the reel says (they're fresher, and say more): the record the
 // archive saves.
@@ -115,8 +138,8 @@ export function mergeGirl(reel, info, listed) {
     online: pick(info?.online, reel.online),
     siteLastVisitAt: info?.siteLastVisitAt ?? null,
     about: info?.about ?? null,
-    birthday: info?.birthday ?? null,
-    verified: info?.verified ?? null,
+    birthday: pick(info?.birthday, date(listed?.birthday)),
+    verified: pick(info?.verified, listed?.is_verify == null ? null : String(listed.is_verify) === "1"),
     likesCount: pick(info?.likesCount, count(listed?.likes_count)),
     favouritesCount: pick(info?.favouritesCount, count(listed?.count_favourites)),
     giftsCount: info?.giftsCount ?? null,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { mergeGirl, shapeInfo, shapePhoto, shapeReel } from "../src/sites/mirami/girl.js";
+import { mergeGirl, shapeInfo, shapeListed, shapePhoto, shapeReel } from "../src/sites/mirami/girl.js";
 
 // A reel as mirami's API sends it (ids and keys made up).
 const REEL = {
@@ -158,5 +158,52 @@ describe("mirami shapePhoto", () => {
     assert.equal(photo.image, null);
     assert.equal(photo.original, null);
     assert.equal(photo.likes, 4);
+  });
+});
+
+describe("mirami shapeListed", () => {
+  it("reads a girl from the directory, with no reel", () => {
+    const girl = shapeListed({
+      nick: "Patricia",
+      ref_code: "1E6D4C",
+      avatar_url: "https://s1.rda.la/A/B/user/profile/image/main_crop428x428_K.webp",
+      birthday: "1988-07-06",
+      id: "41372249",
+      is_verify: 1,
+      shows_count: 804,
+      status: "busy",
+      age: "38",
+      country: { name: "Colombia", iso: "Co" },
+    });
+    assert.deepEqual(girl, {
+      modelId: "41372249",
+      refCode: "1E6D4C",
+      name: "Patricia",
+      profileName: null,
+      avatar: "https://s1.rda.la/A/B/user/profile/image/main_crop428x428_K.webp",
+      country: "CO",
+      age: 38,
+      online: true,
+      storyId: null,
+      src: null,
+      preview: null,
+      likes: null,
+    });
+  });
+
+  it("reads a rating's user too", () => {
+    const girl = shapeListed({ id: 66343681, nick: "nami", country: "US", age: 26, avatarUrl: "https://x/a.webp", refCode: "JCNN6O6N", statusOnline: "offline" });
+    assert.equal(girl.modelId, "66343681");
+    assert.equal(girl.refCode, "JCNN6O6N");
+    assert.equal(girl.country, "US");
+    assert.equal(girl.online, false);
+  });
+
+  it("takes her birthday and verified from the list when there's no profile", () => {
+    const listed = { id: "41372249", birthday: "1988-07-06", is_verify: 1, shows_count: 804 };
+    const record = mergeGirl(shapeListed(listed), null, listed);
+    assert.equal(record.birthday, "1988-07-06");
+    assert.equal(record.verified, true);
+    assert.equal(record.showsCount, 804);
   });
 });

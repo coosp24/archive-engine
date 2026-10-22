@@ -4,14 +4,16 @@ import { mapLimit } from "../../core/pool.js";
 import { wait } from "../../core/retry.js";
 import { facesStore } from "../../db/faces.js";
 import { createApi } from "./api.js";
-import { mergeGirl, shapeInfo, shapePhoto, shapeReel } from "./girl.js";
+import { mergeGirl, shapeInfo, shapeListed, shapePhoto, shapeReel } from "./girl.js";
 import { recordPhotos, recordStories } from "./store.js";
 
 // mirami (mirami.chat): its reels — its stories — read from its API as a
 // guest, with no browser, and saved to its own tables (./store.js,
-// supabase/mirami/). The models are the girls with reels; each one's
-// profile is read too, for what the reels don't say, and her gallery: every
-// photo on her profile.
+// supabase/mirami/). The models are the girls with reels, and those in
+// mirami's girls lists (the directory, those online now, the day's and the
+// week's ratings) — as many of its girls as a visitor can be shown. Each
+// one's profile is read too, for what the reels and lists don't say, and her
+// gallery: every photo on her profile.
 
 // The reels feed: 100 a page, the pages stable and not overlapping (~2,200
 // reels in ~23 pages). Read until a page is empty or brings nothing new, or
@@ -19,11 +21,17 @@ import { recordPhotos, recordStories } from "./store.js";
 const PER_PAGE = 100;
 const MAX_PAGES = 100;
 const PAGE_DELAY = 300;
-// mirami's girls lists, the only place with her shows count: those online
-// now, and the directory — of which a guest (or an account) is shown only
-// the first 10 pages.
+// mirami's girls lists: the directory — of which a guest (or an account) is
+// shown only the first 10 pages — and those online now, the only places
+// with her shows count; and the day's and the week's ratings, 100 each. The
+// directory comes in two orders, each with its own first 10 pages: online
+// girls first, and (as mirami's own Girls page asks, "offline=1") popular
+// ones whether online or not — so both are read.
 const LIST_PER_PAGE = 40;
 const LIST_PAGES = 10;
+const DIRECTORY_ORDERS = ["", "&offline=1"];
+const RATINGS = ["day", "week"];
+const RATING_SIZE = 100;
 // Profiles (and galleries) read at once.
 const PROFILE_CONCURRENCY = 6;
 // A gallery's pages: 20 photos each (her avatar besides, on the first),
@@ -55,23 +63,37 @@ async function readReels(api, limit) {
   return [...reels.values()].slice(0, limit ?? undefined);
 }
 
-// The girls in mirami's lists this run, by id: those online now and the
-// directory's first pages. Only for their shows counts, so a list that
-// fails is left out rather than failing the run.
+// The girls in mirami's lists this run, by id, as the lists send them: the
+// ratings' first (they say least), then the directory and those online now
+// over them (they say more). A list that fails is left out rather than
+// failing the run.
 async function readListed(api) {
   const listed = new Map();
   const add = (list) => list?.forEach((g) => g?.id != null && listed.set(String(g.id), g));
-  try {
-    add((await api.get("/girls/online")).json?.data);
-    for (let page = 1; page <= LIST_PAGES; page++) {
-      const res = await api.get(`/girls?per-page=${LIST_PER_PAGE}&page=${page}`);
-      if (!res.ok || !res.json?.data?.length) break;
-      add(res.json.data);
-      await wait(PAGE_DELAY);
+  const attempt = async (what, read) => {
+    try {
+      await read();
+    } catch (error) {
+      console.warn(`⚠️ Couldn't read mirami's ${what} (${error.message})`);
     }
-  } catch (error) {
-    console.warn(`⚠️ Couldn't read mirami's girls lists (${error.message}) — no shows counts this run`);
+  };
+  for (const period of RATINGS) {
+    await attempt(`${period}'s rating`, async () => {
+      const res = await api.get(`/v2/tournament/rating/current/${period}?per-page=${RATING_SIZE}&page=1`);
+      add(res.json?.data?.map((entry) => entry?.user));
+    });
   }
+  for (const order of DIRECTORY_ORDERS) {
+    await attempt("girls directory", async () => {
+      for (let page = 1; page <= LIST_PAGES; page++) {
+        const res = await api.get(`/girls?per-page=${LIST_PER_PAGE}&page=${page}${order}`);
+        if (!res.ok || !res.json?.data?.length) break;
+        add(res.json.data);
+        await wait(PAGE_DELAY);
+      }
+    });
+  }
+  await attempt("online girls", async () => add((await api.get("/girls/online")).json?.data));
   return listed;
 }
 
@@ -106,10 +128,10 @@ async function readGallery(api, modelId) {
   }
 }
 
-// Reads mirami's reels (or `limit` of them) and every one of their girls'
-// profiles and galleries, and saves them all: new ones added, the rest
-// brought up to date (likes, counts, online), each girl marked seen. Fills
-// `report` in as it goes.
+// Reads mirami's reels (or `limit` of them, and then no one else) and its
+// girls lists, then every one of those girls' profiles and galleries, and
+// saves them all: new ones added, the rest brought up to date (likes,
+// counts, online), each girl marked seen. Fills `report` in as it goes.
 async function archive({ account, limit, report }) {
   const api = createApi();
   try {
@@ -121,8 +143,15 @@ async function archive({ account, limit, report }) {
     const reels = raw.map(shapeReel);
     const listed = await readListed(api);
 
+    // The girls with reels, and — unless it's a trial run of `limit` reels —
+    // those in the lists without one.
+    const withReels = new Map(reels.filter((r) => r.modelId).map((r) => [r.modelId, r.refCode]));
+    const others = limit
+      ? []
+      : [...listed.values()].map(shapeListed).filter((g) => g.modelId && !withReels.has(g.modelId));
+    const girls = [...withReels.entries(), ...others.map((g) => [g.modelId, g.refCode])];
+
     // One profile per girl, however many reels she has.
-    const girls = [...new Map(reels.filter((r) => r.modelId).map((r) => [r.modelId, r.refCode])).entries()];
     const infos = new Map(
       await mapLimit(girls, PROFILE_CONCURRENCY, async ([modelId, refCode]) => [modelId, await readProfile(api, refCode)]),
     );
@@ -131,14 +160,18 @@ async function archive({ account, limit, report }) {
     const saver = createBatchSaver({ send: recordStories, describe });
     const online = new Set();
     let unsaveable = 0;
+    const queue = (base) => {
+      const record = mergeGirl(base, infos.get(base.modelId), listed.get(base.modelId));
+      if (record.online) online.add(record.modelId);
+      saver.queue(record);
+      return record;
+    };
     for (const [i, reel] of reels.entries()) {
       if (!reel.modelId || !reel.storyId || !reel.src) {
         unsaveable++;
         continue;
       }
-      const record = mergeGirl(reel, infos.get(reel.modelId), listed.get(reel.modelId));
-      if (record.online) online.add(record.modelId);
-      saver.queue(record);
+      const record = queue(reel);
       if (isDev) {
         line();
         console.log(`🎬 Reel ${i + 1}: ${record.storyId}`);
@@ -147,6 +180,7 @@ async function archive({ account, limit, report }) {
         console.log(`❤️  ${record.likes} likes · 🟢 ${record.online ? "online" : "offline"}`);
       }
     }
+    others.forEach(queue);
     await saver.flush();
 
     // Her photos, once her row is saved (a photo points at it).
@@ -170,8 +204,9 @@ async function archive({ account, limit, report }) {
       newAvatars: added.avatar ?? 0,
     });
     line();
-    console.log(`🎞️  Reels found:     ${raw.length}, from ${girls.length} models`);
-    console.log(`💾 Saved:           ${stats.saved} (every reel: likes and counts change)`);
+    console.log(`🎞️  Reels found:     ${raw.length}, from ${withReels.size} models`);
+    console.log(`📋 In its lists:    ${listed.size} models, ${others.length} of them without reels`);
+    console.log(`💾 Saved:           ${stats.saved} (every reel and girl: likes and counts change)`);
     console.log(`🆕 New models:      ${report.newModels}`);
     console.log(`🆕 New reels:       ${report.newStories}`);
     console.log(`🆕 New names:       ${report.newNames}`);
