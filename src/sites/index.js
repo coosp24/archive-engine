@@ -17,7 +17,8 @@ import flirtbees from "./flirtbees/index.js";
 //            saved, … (see src/db/runs.js), and dataMB when it has no
 //            browser to count it — as it goes, even when it fails partway
 //   faces    { todo(limit), record(scans) }: its images still to look for
-//            faces in, and where their faces go (src/faces/indexer.js); null
+//            faces in, and where their faces go (src/faces/indexer.js;
+//            src/db/faces.js makes one from the site's faces.sql); null
 //            for a site without face search
 //
 // The rest — the browser, the run's log, the faces, the schedule — is

@@ -27,7 +27,7 @@ src/
     browser.js           launching the browser, setting up a page
     batch-saver.js       saving in the background, in batches
     retry.js, pool.js, log.js
-  db/                    the shared tables: runs, accounts
+  db/                    the shared tables (runs, accounts), and each site's faces
   faces/                 face detection and fingerprints (ONNX), and the indexer
   sites/
     index.js             the list of sites, and what a site provides

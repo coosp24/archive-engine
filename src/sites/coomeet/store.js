@@ -1,8 +1,8 @@
 import supabase from "../../db/client.js";
 
 // coomeet's tables (supabase/coomeet/): its models and what's been seen of
-// them, and their faces. Every call goes through a coomeet_* function or
-// table, so another site's data never mixes with coomeet's.
+// them. Every call goes through a coomeet_* function or table, so another
+// site's data never mixes with coomeet's. Its faces: src/db/faces.js.
 
 // Saves a batch of stories as the run saw them (shaped as in ./story.js),
 // and marks the models in `seen` as seen again — those in `seenOnline`
@@ -63,22 +63,3 @@ export async function getKnownModels() {
     if (data.length < PAGE) return known;
   }
 }
-
-// Where the face indexer (src/faces/indexer.js) gets coomeet's images and
-// saves their faces.
-export const faces = {
-  // The next images to look at, newest first: [{ source, source_id,
-  // model_id, image, capped }].
-  async todo(limit) {
-    const { data, error } = await supabase.rpc("coomeet_faces_todo", { p_limit: limit });
-    if (error) throw new Error(`Failed to fetch images to scan: ${error.message}`);
-    return data;
-  },
-  // Saves a batch of scanned images and their faces in one round trip.
-  // Answers how many were new: { scanned, faces }.
-  async record(scans) {
-    const { data, error } = await supabase.rpc("coomeet_record_faces", { p_scans: scans });
-    if (error) throw new Error(`Failed to save faces: ${error.message}`);
-    return data;
-  },
-};

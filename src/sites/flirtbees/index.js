@@ -1,4 +1,5 @@
 import { createBatchSaver } from "../../core/batch-saver.js";
+import { facesStore } from "../../db/faces.js";
 import { isDev, line } from "../../core/log.js";
 import { wait } from "../../core/retry.js";
 import { createApi } from "./api.js";
@@ -130,5 +131,5 @@ export default {
   method: "api",
   browser: false,
   archive,
-  faces: null,
+  faces: facesStore("flirtbees"),
 };

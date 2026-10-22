@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
+import { facesStore } from "../../db/faces.js";
 import { isDev, line } from "../../core/log.js";
 import { retry, wait } from "../../core/retry.js";
 import { createStorySaver } from "./saver.js";
 import { login, passIntro } from "./session.js";
-import { faces, getKnownModels, recordStories } from "./store.js";
+import { getKnownModels, recordStories } from "./store.js";
 import { shapeStory } from "./story.js";
 
 // coomeet (p.coomeet.com): its stories feed, read straight from its server
@@ -204,5 +205,5 @@ export default {
   method: "feed",
   browser: true,
   archive,
-  faces,
+  faces: facesStore("coomeet"),
 };
