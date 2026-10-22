@@ -29,6 +29,7 @@ create table public.models (
   -- sent it: high while she's popular, falling as that fades.
   current_balance smallint,
   -- The highest balance she's been seen with: how popular she's ever been.
+  -- Premium, on the site, once it's above 10 (coomeet's floor).
   peak_balance smallint
 );
 
@@ -74,10 +75,7 @@ alter table public.models
 create index stories_model_id_published_at_idx
   on public.stories (model_id, published_at desc);
 
--- For the site's "popular now" (current) and "top all time" (peak) lists,
--- highest first.
-create index models_current_balance_idx
-  on public.models (current_balance desc nulls last);
+-- For the site's Premium list, highest peak first.
 create index models_peak_balance_idx
   on public.models (peak_balance desc nulls last);
 

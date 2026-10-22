@@ -2,11 +2,13 @@
 -- Supabase SQL editor, after media-balance.sql (schema.sql has the same end
 -- state for a fresh setup). Safe to re-run.
 --
--- models.current_balance is how popular she is now; models.peak_balance,
--- new here, the highest she's ever been seen at — for the site's "popular
--- now" and "top all time" lists. The balances table, a row per change,
--- is dropped: the peak is all the site needs from it. It's filled from that
--- table first, so no peak seen so far is lost.
+-- models.peak_balance, new here, is the highest balance she's ever been
+-- seen at: the site calls her Premium once it's above 10, coomeet's floor,
+-- and lists Premium models highest first. current_balance stays (the peak
+-- is worked out from it) but is no longer listed by, so its index goes.
+-- The balances table, a row per change, is dropped: the peak is all the
+-- site needs from it. It's filled from that table first, so no peak seen so
+-- far is lost.
 
 begin;
 
@@ -31,6 +33,7 @@ create index if not exists models_peak_balance_idx
   on public.models (peak_balance desc nulls last);
 
 drop table if exists public.balances;
+drop index if exists public.models_current_balance_idx;
 
 -- Records one story as the engine saw it, in one round trip: her model row
 -- (created on first sight) marked seen, her name, avatar and story added to
