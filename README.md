@@ -1,0 +1,51 @@
+# archive-engine
+
+Archives the stories, names, avatars and faces of models on video chat sites into Supabase, once an hour. archive-web shows what it keeps.
+
+## Running it
+
+```sh
+npm install
+npm start                         # every site, logged in with its primary account
+npm start -- --site=coomeet --limit=20 --guest
+npm start -- --faces-only --faces-limit=50
+npm run check                     # lint and unit tests
+```
+
+`.env` holds `SUPABASE_URL` and `SUPABASE_SECRET_KEY`, plus optionally `BROWSER_PATH`, `HEADLESS=true` and `ENV=development` (which logs every story). `src/cli.js` lists every option.
+
+On GitHub, `.github/workflows/archive.yml` runs it every hour, dispatched by Supabase (`supabase/shared/schedule.sql`). `check.yml` lints and tests every push.
+
+## Layout
+
+```
+index.js                 entry point: node .
+src/
+  cli.js                 options, and a run per site
+  core/                  what every site shares
+    run.js               one site's run: browser, account, report
+    browser.js           launching the browser, setting up a page
+    batch-saver.js       saving in the background, in batches
+    retry.js, pool.js, log.js
+  db/                    the shared tables: runs, accounts
+  faces/                 face detection and fingerprints (ONNX), and the indexer
+  sites/
+    index.js             the list of sites, and what a site provides
+    coomeet/
+      index.js           reading its stories feed
+      feed.page.js       runs inside coomeet's page: its websocket
+      story.js           a story as coomeet sends it → as the archive keeps it
+      saver.js           what's new, and what's only seen again
+      session.js         its intro screens and login
+      store.js           its tables (coomeet_*)
+models/                  the face models (InsightFace buffalo_s)
+supabase/                the database: shared/ and one folder per site
+test/                    unit tests (node --test)
+```
+
+## Adding a site
+
+1. `src/sites/<site>/`: an `index.js` exporting `{ id, method, archive, faces }`. See `src/sites/index.js` for what each does, and coomeet for an example.
+2. List it in `src/sites/index.js`.
+3. `supabase/<site>/`: its own tables and functions, named `<site>_…`. See `supabase/README.md`.
+4. Its login, if it has one, in the `accounts` table with `site = '<site>'`.

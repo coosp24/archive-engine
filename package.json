@@ -1,14 +1,26 @@
 {
   "name": "archive-engine",
+  "private": true,
   "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "archive": "node --env-file-if-exists=.env .",
-    "dev": "node --env-file-if-exists=.env index.js"
+    "start": "node --env-file-if-exists=.env .",
+    "test": "node --test",
+    "lint": "eslint .",
+    "check": "npm run lint && npm test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "onnxruntime-node": "^1.20.1",
     "puppeteer-core": "^24.40.0",
     "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0"
   }
 }
