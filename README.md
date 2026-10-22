@@ -43,6 +43,11 @@ src/
       api.js             login (or a guest token), requests
       story.js           a story as flirtbees sends it → as the archive keeps it
       store.js           its tables (flirtbees_*)
+    mirami/              its API as a guest, no browser; its stories are reels
+      index.js           reading its reels, its girls lists and each girl's profile
+      api.js             a guest token from its socket, requests
+      girl.js            a reel and a profile as mirami sends them → as the archive keeps them
+      store.js           its tables (mirami_*)
 models/                  the face models (InsightFace buffalo_s)
 supabase/                the database: shared/ and one folder per site
 test/                    unit tests (node --test)

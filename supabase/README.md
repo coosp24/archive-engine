@@ -27,7 +27,10 @@ Run, in order:
 7. `flirtbees/schema.sql`
 8. `flirtbees/faces.sql`
 9. `flirtbees/analysis.sql`
-10. `shared/schedule.sql` (after storing the GitHub token it describes)
+10. `mirami/schema.sql`
+11. `mirami/faces.sql`
+12. `mirami/analysis.sql`
+13. `shared/schedule.sql` (after storing the GitHub token it describes)
 
 ## Adding a site
 
