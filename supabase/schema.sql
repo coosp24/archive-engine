@@ -3,8 +3,6 @@
 -- models holds each model as she is now; names, avatars and stories collect
 -- every value she has ever been seen with — the current one included, each
 -- once — so a model's page can list them all from those tables alone.
--- balances holds every balance she's had, a row each time it changes
--- (see media-balance.sql).
 --
 -- Everyone can read; only the engine writes, with the secret key (which
 -- bypasses RLS), through record_story() below.
@@ -29,7 +27,9 @@ create table public.models (
   last_seen_at timestamptz not null default now(),
   -- The minutes a viewer needs to add her as a friend, as coomeet last
   -- sent it: high while she's popular, falling as that fades.
-  current_balance smallint
+  current_balance smallint,
+  -- The highest balance she's been seen with: how popular she's ever been.
+  peak_balance smallint
 );
 
 -- Every name she has had, each once.
@@ -74,20 +74,12 @@ alter table public.models
 create index stories_model_id_published_at_idx
   on public.stories (model_id, published_at desc);
 
--- Every balance she's had: a row each time it changes, so a value can come
--- back (60, 46, 60 is three rows).
-create table public.balances (
-  id bigint generated always as identity primary key,
-  model_id bigint not null references public.models (id) on delete cascade,
-  balance smallint not null,
-  seen_at timestamptz not null default now()
-);
-
-create index balances_model_id_seen_at_idx
-  on public.balances (model_id, seen_at desc);
--- For a "best models" list, highest balance first.
+-- For the site's "popular now" (current) and "top all time" (peak) lists,
+-- highest first.
 create index models_current_balance_idx
   on public.models (current_balance desc nulls last);
+create index models_peak_balance_idx
+  on public.models (peak_balance desc nulls last);
 
 /* ===================== ACCESS ===================== */
 
@@ -95,7 +87,6 @@ alter table public.models enable row level security;
 alter table public.names enable row level security;
 alter table public.avatars enable row level security;
 alter table public.stories enable row level security;
-alter table public.balances enable row level security;
 
 create policy "Anyone can read models" on public.models
   for select to anon, authenticated using (true);
@@ -104,8 +95,6 @@ create policy "Anyone can read names" on public.names
 create policy "Anyone can read avatars" on public.avatars
   for select to anon, authenticated using (true);
 create policy "Anyone can read stories" on public.stories
-  for select to anon, authenticated using (true);
-create policy "Anyone can read balances" on public.balances
   for select to anon, authenticated using (true);
 
 /* ===================== WRITING ===================== */
@@ -121,11 +110,12 @@ $$;
 
 -- Records one story as the engine saw it, in one round trip: her model row
 -- (created on first sight) marked seen, her name, avatar and story added to
--- their collections if they're new there, her balance added to its
--- timeline if it changed, and her current_* brought up to date. A story only
--- becomes her current one if it's at least as new as the one there — the
--- feed isn't in date order. A story already saved gets its mp4 and gif if
--- it has none (it was saved before they were kept); they're never replaced.
+-- their collections if they're new there, her balance and (if it's a new
+-- high) her peak balance kept, and her current_* brought up to date. A
+-- story only becomes her current one if it's at least as new as the one
+-- there — the feed isn't in date order. A story already saved gets its mp4
+-- and gif if it has none (it was saved before they were kept); they're
+-- never replaced.
 --
 -- Answers which of them were new: { model, name, avatar, story, balance }.
 create or replace function public.record_story(
@@ -182,13 +172,12 @@ begin
   end if;
 
   if p_balance is not null then
-    update models set current_balance = p_balance
+    update models set
+      current_balance = p_balance,
+      peak_balance = greatest(peak_balance, p_balance)
     where id = p_model_id
       and current_balance is distinct from p_balance;
     new_balance := found;
-    if new_balance then
-      insert into balances (model_id, balance) values (p_model_id, p_balance);
-    end if;
   end if;
 
   update models set

@@ -14,7 +14,9 @@
 --                             that fades. Its index is for a "best models"
 --                             list, highest first.
 --   balances                  every balance she's had, a row each time it
---                             changes (60, 46, 60 is three rows).
+--                             changes (60, 46, 60 is three rows). Since
+--                             replaced by models.peak_balance: run
+--                             peak-balance.sql after this.
 --
 -- Removed: online status — online_sessions, models.last_online_at and
 -- runs.online_models, with what used them. A model is still marked seen by
