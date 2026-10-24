@@ -109,14 +109,21 @@ create index if not exists flirtbees_stories_model_id_published_at_idx
 create index if not exists flirtbees_models_last_online_at_idx
   on public.flirtbees_models (last_online_at desc nulls last);
 -- For the site's models list: its default order (newest story) and "Recently
--- added" ones, each ending on the id as the list does, and when the engine
--- last saw anyone.
+-- added" ones, each ending on the id as the list does.
 create index if not exists flirtbees_models_current_story_published_at_idx
   on public.flirtbees_models (current_story_published_at desc nulls last, id desc);
 create index if not exists flirtbees_models_first_seen_at_idx
   on public.flirtbees_models (first_seen_at, id);
-create index if not exists flirtbees_models_last_seen_at_idx
-  on public.flirtbees_models (last_seen_at desc);
+-- Not last_seen_at, which every run rewrites for every model it sees: an
+-- index on it would be rewritten with it (see the fillfactor below). The
+-- site reads when the engine last checked from the runs log instead.
+drop index if exists public.flirtbees_models_last_seen_at_idx;
+
+-- Every run updates these tables' rows (when she was seen, her counts and links): with
+-- room left in each page, Postgres updates a row in place, without
+-- rewriting the indexes, as long as no indexed column changed.
+alter table public.flirtbees_models set (fillfactor = 80);
+alter table public.flirtbees_stories set (fillfactor = 80);
 -- For the analysis page's days (flirtbees_analysis_daily): what each table
 -- gained when.
 create index if not exists flirtbees_names_first_seen_at_idx on public.flirtbees_names (first_seen_at);
