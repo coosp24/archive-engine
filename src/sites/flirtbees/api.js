@@ -1,7 +1,8 @@
+import { createHttp } from "../../core/http.js";
+
 // flirtbees' API (https://api.flirtbees.com/api/v1), spoken directly — no
 // browser: a token from logging in (or a guest one), sent as a Bearer
-// header with every call. Counts the bytes it receives, for the run's
-// "data consumed".
+// header with every call.
 
 const API = "https://api.flirtbees.com/api/v1";
 const HEADERS = {
@@ -13,26 +14,15 @@ const HEADERS = {
 const TIMEOUT = 20000;
 
 export function createApi() {
+  const http = createHttp({ headers: HEADERS, timeout: TIMEOUT });
   let token = null;
-  let bytes = 0;
 
-  async function call(method, path, body) {
-    const res = await fetch(`${API}${path}`, {
+  const call = (method, path, body) =>
+    http.request(`${API}${path}`, {
       method,
-      headers: token ? { ...HEADERS, Authorization: `Bearer ${token}` } : HEADERS,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT),
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body,
     });
-    const raw = await res.text();
-    bytes += raw.length;
-    let json = null;
-    try {
-      json = JSON.parse(raw);
-    } catch {
-      // Not JSON (an error page, say): `json` stays null.
-    }
-    return { status: res.status, ok: res.ok, json };
-  }
 
   return {
     // Logs in with { email, password }, else (no account, or a login that
@@ -65,6 +55,6 @@ export function createApi() {
         return false;
       }
     },
-    megabytes: () => bytes / (1024 * 1024),
+    megabytes: http.megabytes,
   };
 }

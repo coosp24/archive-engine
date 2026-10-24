@@ -134,6 +134,10 @@ create index if not exists flirtify_models_last_seen_at_idx
 -- For the analysis page's days (flirtify_analysis_daily): what each table
 -- gained when.
 create index if not exists flirtify_names_first_seen_at_idx on public.flirtify_names (first_seen_at);
+-- For the site's search by name: any part of any name she's had (ilike
+-- '%…%', which a plain index can't help).
+create index if not exists flirtify_names_name_trgm_idx
+  on public.flirtify_names using gin (name gin_trgm_ops);
 create index if not exists flirtify_avatars_first_seen_at_idx on public.flirtify_avatars (first_seen_at);
 create index if not exists flirtify_stories_first_seen_at_idx on public.flirtify_stories (first_seen_at);
 -- For the country filter.

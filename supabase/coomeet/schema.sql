@@ -106,6 +106,10 @@ create index if not exists coomeet_models_last_seen_at_idx
 -- For the analysis page's days (coomeet_analysis_daily): what each table
 -- gained when.
 create index if not exists coomeet_names_first_seen_at_idx on public.coomeet_names (first_seen_at);
+-- For the site's search by name: any part of any name she's had (ilike
+-- '%…%', which a plain index can't help).
+create index if not exists coomeet_names_name_trgm_idx
+  on public.coomeet_names using gin (name gin_trgm_ops);
 create index if not exists coomeet_avatars_first_seen_at_idx on public.coomeet_avatars (first_seen_at);
 create index if not exists coomeet_stories_first_seen_at_idx on public.coomeet_stories (first_seen_at);
 create index if not exists coomeet_models_peak_balance_idx

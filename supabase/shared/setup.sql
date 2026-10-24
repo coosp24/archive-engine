@@ -4,6 +4,9 @@
 
 -- Fingerprints for face search (supabase/<site>/faces.sql).
 create extension if not exists vector with schema extensions;
+-- Trigram indexes, for the site's search by any part of a name
+-- (<site>_names_name_trgm_idx).
+create extension if not exists pg_trgm with schema extensions;
 
 -- The engine's own calls (its secret key) may take up to a minute: saving a
 -- batch of faces means adding them to the index, which on the free plan's

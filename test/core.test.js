@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { describe, it } from "node:test";
-import { formatDuration } from "../src/core/log.js";
+import { createHttp } from "../src/core/http.js";
+import { describeCounts, formatDuration } from "../src/core/log.js";
 import { mapLimit } from "../src/core/pool.js";
 import { retry } from "../src/core/retry.js";
 
@@ -52,5 +54,34 @@ describe("mapLimit", () => {
     });
     assert.deepEqual(out, [60, 20, 40, 10, 30]);
     assert.equal(most, 2);
+  });
+});
+
+describe("describeCounts", () => {
+  it("words what was new, leaving out what wasn't", () => {
+    assert.equal(describeCounts({ model: 1, story: 3, name: 0 }), "1 model, 3 stories");
+    assert.equal(describeCounts({ story: 2 }, { story: ["reel", "reels"] }), "2 reels");
+    assert.equal(describeCounts({}), "");
+  });
+});
+
+describe("createHttp", () => {
+  it("reads JSON, sends its headers, and counts what it received", async () => {
+    const server = createServer((req, res) => {
+      if (req.url === "/json") res.end(JSON.stringify({ seen: req.headers["x-site"], method: req.method }));
+      else res.writeHead(404).end("not found");
+    });
+    await new Promise((resolve) => server.listen(0, resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    try {
+      const http = createHttp({ headers: { "X-Site": "test" } });
+      const ok = await http.request(`${base}/json`, { method: "POST", body: { a: 1 } });
+      assert.deepEqual(ok, { status: 200, ok: true, json: { seen: "test", method: "POST" } });
+      const missing = await http.request(`${base}/nope`);
+      assert.deepEqual(missing, { status: 404, ok: false, json: null });
+      assert.ok(http.megabytes() > 0);
+    } finally {
+      server.close();
+    }
   });
 });

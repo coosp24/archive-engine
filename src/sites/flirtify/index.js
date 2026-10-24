@@ -1,5 +1,5 @@
 import { createBatchSaver } from "../../core/batch-saver.js";
-import { isDev, line } from "../../core/log.js";
+import { describeCounts, isDev, line } from "../../core/log.js";
 import { mapLimit } from "../../core/pool.js";
 import { retry, wait } from "../../core/retry.js";
 import { facesStore } from "../../db/faces.js";
@@ -36,13 +36,6 @@ const CATEGORY_MAX_PAGES = 1000;
 const CATEGORY_PASSES = 3;
 // Profiles read at once.
 const PROFILE_CONCURRENCY = 6;
-
-const PLURAL = { model: "models", name: "names", avatar: "avatars", story: "stories" };
-const describe = (counts) =>
-  Object.entries(counts)
-    .filter(([, n]) => n)
-    .map(([kind, n]) => `${n} ${n === 1 ? kind : (PLURAL[kind] ?? kind)}`)
-    .join(", ");
 
 // A request tried again when it fails — a timeout, a 5xx, or flirtify
 // asking for a pause (429) — not when it's answered with something else.
@@ -181,7 +174,7 @@ async function archive({ account, limit, report }) {
     const entries = [...models.entries()];
     const profiles = await mapLimit(entries, PROFILE_CONCURRENCY, ([, m]) => readProfile(api, m.feed));
 
-    const saver = createBatchSaver({ send: recordModels, describe, batchSize: 50 });
+    const saver = createBatchSaver({ send: recordModels, describe: describeCounts, batchSize: 50 });
     const online = new Set();
     const stories = new Set();
     let unsaveable = 0;

@@ -19,3 +19,24 @@ export function formatDuration(ms) {
   if (m) return `${m}m ${pad(s)}s`;
   return `${s}s`;
 }
+
+// What a batch saved was new, in words for the development log: "3 stories,
+// 1 name". `words` names a kind a site calls something else, as
+// { story: ["reel", "reels"] }.
+const WORDS = {
+  model: ["model", "models"],
+  name: ["name", "names"],
+  avatar: ["avatar", "avatars"],
+  story: ["story", "stories"],
+  balance: ["balance", "balances"],
+  photo: ["photo", "photos"],
+};
+export function describeCounts(counts, words = {}) {
+  return Object.entries(counts)
+    .filter(([, n]) => n)
+    .map(([kind, n]) => {
+      const [one, many] = words[kind] ?? WORDS[kind] ?? [kind, kind];
+      return `${n} ${n === 1 ? one : many}`;
+    })
+    .join(", ");
+}

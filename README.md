@@ -8,6 +8,7 @@ Archives the stories, names, avatars and faces of models on video chat sites int
 npm install
 npm start                         # every site, logged in with its primary account
 npm start -- --site=coomeet --limit=20 --guest
+npm start -- --site=mirami,flirtify # some of the sites
 npm start -- --faces-only --faces-limit=50
 npm run check                     # lint and unit tests
 ```
@@ -25,6 +26,7 @@ src/
   core/                  what every site shares
     run.js               one site's run: browser, account, report
     browser.js           launching the browser, setting up a page
+    http.js              requests for a site read without a browser
     batch-saver.js       saving in the background, in batches
     retry.js, pool.js, log.js
   db/                    the shared tables (runs, accounts), and each site's faces

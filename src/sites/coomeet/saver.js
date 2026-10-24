@@ -1,13 +1,5 @@
 import { createBatchSaver } from "../../core/batch-saver.js";
-
-const PLURAL = { model: "models", name: "names", avatar: "avatars", story: "stories", balance: "balances" };
-
-// "3 stories, 1 name": a batch's new things, for the development log.
-const describe = (counts) =>
-  Object.entries(counts)
-    .filter(([, n]) => n)
-    .map(([kind, n]) => `${n} ${n === 1 ? kind : (PLURAL[kind] ?? kind)}`)
-    .join(", ");
+import { describeCounts } from "../../core/log.js";
 
 // Saves the run's stories through `send(stories, seen)` (./store.js's
 // recordStories), in the background (src/core/batch-saver.js).
@@ -20,7 +12,7 @@ const describe = (counts) =>
 // stats, added }.
 export function createStorySaver(known, send) {
   const saver = createBatchSaver({
-    describe,
+    describe: describeCounts,
     send: (stories, marks) =>
       send(stories, {
         seen: marks.map((m) => m.id),

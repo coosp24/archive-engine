@@ -4,7 +4,8 @@
 //   page(path)  the data behind one of its pages (SvelteKit's
 //               __data.json), for what the API doesn't give a guest: a
 //               model's profile, its category pages
-// Counts the bytes it receives, for the run's "data consumed".
+
+import { createHttp } from "../../core/http.js";
 
 const SITE = "https://flirtify.com";
 const HEADERS = {
@@ -12,7 +13,6 @@ const HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
 };
-const TIMEOUT = 20000;
 
 // SvelteKit sends a page's data flattened (the "devalue" format): one array
 // of values, each object or array in it holding the indexes of its own.
@@ -52,20 +52,8 @@ export function pageData(json) {
 }
 
 export function createApi() {
-  let bytes = 0;
-
-  async function get(url) {
-    const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(TIMEOUT) });
-    const raw = await res.text();
-    bytes += raw.length;
-    let json = null;
-    try {
-      json = JSON.parse(raw);
-    } catch {
-      // Not JSON (an error page, say): `json` stays null.
-    }
-    return { status: res.status, ok: res.ok, json };
-  }
+  const http = createHttp({ headers: HEADERS });
+  const get = (url) => http.request(url);
 
   return {
     // GET /api/<path>: { status, ok, json } — json null when it isn't JSON.
@@ -81,6 +69,6 @@ export function createApi() {
       if (!res.json) return { error: { status: res.status, message: `HTTP ${res.status}` } };
       return pageData(res.json);
     },
-    megabytes: () => bytes / (1024 * 1024),
+    megabytes: http.megabytes,
   };
 }

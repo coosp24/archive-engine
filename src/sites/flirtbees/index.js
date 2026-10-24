@@ -1,6 +1,6 @@
 import { createBatchSaver } from "../../core/batch-saver.js";
 import { facesStore } from "../../db/faces.js";
-import { isDev, line } from "../../core/log.js";
+import { describeCounts, isDev, line } from "../../core/log.js";
 import { wait } from "../../core/retry.js";
 import { createApi } from "./api.js";
 import { getKnownAvatars, recordStories } from "./store.js";
@@ -16,13 +16,6 @@ import { fullAvatarCandidates, shapeStory } from "./story.js";
 const QUIET_PAGES = 4;
 const MAX_PAGES = 60;
 const PAGE_DELAY = 500;
-
-const PLURAL = { model: "models", name: "names", avatar: "avatars", story: "stories" };
-const describe = (counts) =>
-  Object.entries(counts)
-    .filter(([, n]) => n)
-    .map(([kind, n]) => `${n} ${n === 1 ? kind : (PLURAL[kind] ?? kind)}`)
-    .join(", ");
 
 // The feed, every story in it once, as flirtbees sends them; stops early at
 // `limit` stories. A guest is only shown about ten, then refused (403).
@@ -76,7 +69,7 @@ async function archive({ account, limit, report }) {
 
     const raw = await readFeed(api, limit);
     const known = await getKnownAvatars();
-    const saver = createBatchSaver({ send: recordStories, describe });
+    const saver = createBatchSaver({ send: recordStories, describe: describeCounts });
     const online = new Set();
     let unsaveable = 0;
 

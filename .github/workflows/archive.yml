@@ -1,7 +1,7 @@
 name: Archive
 
 # No `schedule:` here on purpose. Supabase is the clock: pg_cron dispatches
-# this workflow every hour — see supabase/schedule.sql. GitHub's own cron
+# this workflow every hour — see supabase/shared/schedule.sql. GitHub's own cron
 # fires late or not at all, and a cron line here as well would run every
 # hour twice.
 on:
@@ -37,6 +37,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -48,5 +49,8 @@ jobs:
       - name: Install virtual display (Xvfb)
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
+      # Every site's stories, each logged as it's done, then faces for 25
+      # minutes shared by the sites (src/cli.js): the job's 55 minutes hold
+      # both.
       - name: Archive stories
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node . ${{ inputs.guest && '--guest' || '' }}

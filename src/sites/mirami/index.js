@@ -1,5 +1,5 @@
 import { createBatchSaver } from "../../core/batch-saver.js";
-import { isDev, line } from "../../core/log.js";
+import { describeCounts, isDev, line } from "../../core/log.js";
 import { mapLimit } from "../../core/pool.js";
 import { wait } from "../../core/retry.js";
 import { facesStore } from "../../db/faces.js";
@@ -38,12 +38,8 @@ const PROFILE_CONCURRENCY = 6;
 // whatever's asked for; the most seen is 6. A cap all the same.
 const GALLERY_PAGES = 30;
 
-const PLURAL = { model: "models", name: "names", avatar: "avatars", story: "reels" };
-const describe = (counts) =>
-  Object.entries(counts)
-    .filter(([, n]) => n)
-    .map(([kind, n]) => `${n} ${n === 1 ? (kind === "story" ? "reel" : kind) : (PLURAL[kind] ?? kind)}`)
-    .join(", ");
+// Its stories are reels.
+const describe = (counts) => describeCounts(counts, { story: ["reel", "reels"] });
 
 // The feed, every reel in it once, as mirami sends them; stops early at
 // `limit` reels.
@@ -186,7 +182,7 @@ async function archive({ account, limit, report }) {
     // Her photos, once her row is saved (a photo points at it).
     const galleries = await mapLimit(girls, PROFILE_CONCURRENCY, ([modelId]) => readGallery(api, modelId));
     const photos = galleries.flatMap((g) => g ?? []);
-    const photoSaver = createBatchSaver({ send: recordPhotos, describe: ({ photo }) => `${photo} photos`, batchSize: 500 });
+    const photoSaver = createBatchSaver({ send: recordPhotos, describe: describeCounts, batchSize: 500 });
     photos.forEach((photo) => photoSaver.queue(photo));
     await photoSaver.flush();
     const unreadGalleries = galleries.filter((g) => !g).length;

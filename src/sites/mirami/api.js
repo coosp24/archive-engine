@@ -1,8 +1,9 @@
+import { createHttp } from "../../core/http.js";
+
 // mirami's API (https://mirame.chat/api — "mirame", with an e), spoken
 // directly — no browser. A guest token comes from its socket.io server
 // (the same as the page's first message there), and goes with every call
-// as a Chat-Token header. Counts the bytes it receives, for the run's "data
-// consumed".
+// as a Chat-Token header.
 //
 // The engine reads mirami as a guest: a logged-in account was tried and
 // saw nothing more (and a few reels fewer).
@@ -43,29 +44,15 @@ export function guestToken() {
 }
 
 export function createApi() {
+  const http = createHttp({ headers: HEADERS, timeout: TIMEOUT });
   let token = null;
-  let bytes = 0;
 
   return {
     async signIn() {
       token = await guestToken();
     },
     // GET `path`: { status, ok, json } — json null when it isn't JSON.
-    async get(path) {
-      const res = await fetch(`${API}${path}`, {
-        headers: { ...HEADERS, "Chat-Token": token },
-        signal: AbortSignal.timeout(TIMEOUT),
-      });
-      const raw = await res.text();
-      bytes += raw.length;
-      let json = null;
-      try {
-        json = JSON.parse(raw);
-      } catch {
-        // Not JSON (an empty 404, say): `json` stays null.
-      }
-      return { status: res.status, ok: res.ok, json };
-    },
-    megabytes: () => bytes / (1024 * 1024),
+    get: (path) => http.request(`${API}${path}`, { headers: { "Chat-Token": token } }),
+    megabytes: http.megabytes,
   };
 }
