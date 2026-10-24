@@ -150,6 +150,20 @@ create index if not exists mirami_photos_model_id_posted_at_idx
 -- For a "Recently active" filter.
 create index if not exists mirami_models_last_online_at_idx
   on public.mirami_models (last_online_at desc nulls last);
+-- For the site's models list: its default order (newest story) and "Recently
+-- added" ones, each ending on the id as the list does, and when the engine
+-- last saw anyone.
+create index if not exists mirami_models_current_story_published_at_idx
+  on public.mirami_models (current_story_published_at desc nulls last, id desc);
+create index if not exists mirami_models_first_seen_at_idx
+  on public.mirami_models (first_seen_at, id);
+create index if not exists mirami_models_last_seen_at_idx
+  on public.mirami_models (last_seen_at desc);
+-- For the analysis page's days (mirami_analysis_daily): what each table
+-- gained when.
+create index if not exists mirami_names_first_seen_at_idx on public.mirami_names (first_seen_at);
+create index if not exists mirami_avatars_first_seen_at_idx on public.mirami_avatars (first_seen_at);
+create index if not exists mirami_stories_first_seen_at_idx on public.mirami_stories (first_seen_at);
 -- For the Top filter and her rank, and the country filter.
 create index if not exists mirami_models_top_score_idx
   on public.mirami_models (top_score desc);

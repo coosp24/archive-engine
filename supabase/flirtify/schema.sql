@@ -122,6 +122,20 @@ create index if not exists flirtify_stories_model_id_published_at_idx
 -- For a "Recently active" filter.
 create index if not exists flirtify_models_last_online_at_idx
   on public.flirtify_models (last_online_at desc nulls last);
+-- For the site's models list: its default order (newest story) and "Recently
+-- added" ones, each ending on the id as the list does, and when the engine
+-- last saw anyone.
+create index if not exists flirtify_models_current_story_published_at_idx
+  on public.flirtify_models (current_story_published_at desc nulls last, id desc);
+create index if not exists flirtify_models_first_seen_at_idx
+  on public.flirtify_models (first_seen_at, id);
+create index if not exists flirtify_models_last_seen_at_idx
+  on public.flirtify_models (last_seen_at desc);
+-- For the analysis page's days (flirtify_analysis_daily): what each table
+-- gained when.
+create index if not exists flirtify_names_first_seen_at_idx on public.flirtify_names (first_seen_at);
+create index if not exists flirtify_avatars_first_seen_at_idx on public.flirtify_avatars (first_seen_at);
+create index if not exists flirtify_stories_first_seen_at_idx on public.flirtify_stories (first_seen_at);
 -- For the country filter.
 create index if not exists flirtify_models_country_idx
   on public.flirtify_models (country);

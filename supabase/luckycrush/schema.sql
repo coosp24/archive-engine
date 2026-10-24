@@ -75,6 +75,20 @@ create table if not exists public.luckycrush_stories (
 -- For a "Recently active" filter.
 create index if not exists luckycrush_models_last_online_at_idx
   on public.luckycrush_models (last_online_at desc nulls last);
+-- For the site's models list: its default order (newest story) and "Recently
+-- added" ones, each ending on the id as the list does, and when the engine
+-- last saw anyone.
+create index if not exists luckycrush_models_current_story_published_at_idx
+  on public.luckycrush_models (current_story_published_at desc nulls last, id desc);
+create index if not exists luckycrush_models_first_seen_at_idx
+  on public.luckycrush_models (first_seen_at, id);
+create index if not exists luckycrush_models_last_seen_at_idx
+  on public.luckycrush_models (last_seen_at desc);
+-- For the analysis page's days (luckycrush_analysis_daily): what each table
+-- gained when.
+create index if not exists luckycrush_names_first_seen_at_idx on public.luckycrush_names (first_seen_at);
+create index if not exists luckycrush_avatars_first_seen_at_idx on public.luckycrush_avatars (first_seen_at);
+create index if not exists luckycrush_stories_first_seen_at_idx on public.luckycrush_stories (first_seen_at);
 
 /* ===================== ACCESS ===================== */
 

@@ -94,6 +94,20 @@ create index if not exists coomeet_stories_model_id_published_at_idx
 -- peak first).
 create index if not exists coomeet_models_last_online_at_idx
   on public.coomeet_models (last_online_at desc nulls last);
+-- For the site's models list: its default order (newest story) and "Recently
+-- added" ones, each ending on the id as the list does, and when the engine
+-- last saw anyone.
+create index if not exists coomeet_models_current_story_published_at_idx
+  on public.coomeet_models (current_story_published_at desc nulls last, id desc);
+create index if not exists coomeet_models_first_seen_at_idx
+  on public.coomeet_models (first_seen_at, id);
+create index if not exists coomeet_models_last_seen_at_idx
+  on public.coomeet_models (last_seen_at desc);
+-- For the analysis page's days (coomeet_analysis_daily): what each table
+-- gained when.
+create index if not exists coomeet_names_first_seen_at_idx on public.coomeet_names (first_seen_at);
+create index if not exists coomeet_avatars_first_seen_at_idx on public.coomeet_avatars (first_seen_at);
+create index if not exists coomeet_stories_first_seen_at_idx on public.coomeet_stories (first_seen_at);
 create index if not exists coomeet_models_peak_balance_idx
   on public.coomeet_models (peak_balance desc nulls last);
 
