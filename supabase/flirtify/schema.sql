@@ -49,8 +49,8 @@ create table if not exists public.flirtify_models (
   about text,
   languages text[],
   -- As flirtify gives them on her profile: its "callPriceInSec" (90 or 120
-  -- so far, null for some), and whether she takes calls ("available") or
-  -- not ("private").
+  -- so far, null for some) — the site's Premium models are those at 120 —
+  -- and whether she takes calls ("available") or not ("private").
   call_price_in_sec smallint,
   access text,
   first_seen_at timestamptz not null default now(),
@@ -139,6 +139,9 @@ create index if not exists flirtify_stories_first_seen_at_idx on public.flirtify
 -- For the country filter.
 create index if not exists flirtify_models_country_idx
   on public.flirtify_models (country);
+-- For the Premium filter (the site's: a call price above 90).
+create index if not exists flirtify_models_call_price_in_sec_idx
+  on public.flirtify_models (call_price_in_sec desc);
 
 /* ===================== ACCESS ===================== */
 
