@@ -33,7 +33,10 @@ Run, in order:
 13. `luckycrush/schema.sql`
 14. `luckycrush/faces.sql`
 15. `luckycrush/analysis.sql`
-16. `shared/schedule.sql` (after storing the GitHub token it describes)
+16. `flirtify/schema.sql`
+17. `flirtify/faces.sql`
+18. `flirtify/analysis.sql`
+19. `shared/schedule.sql` (after storing the GitHub token it describes)
 
 ## Adding a site
 

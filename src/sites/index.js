@@ -1,5 +1,6 @@
 import coomeet from "./coomeet/index.js";
 import flirtbees from "./flirtbees/index.js";
+import flirtify from "./flirtify/index.js";
 import luckycrush from "./luckycrush/index.js";
 import mirami from "./mirami/index.js";
 
@@ -25,4 +26,4 @@ import mirami from "./mirami/index.js";
 //
 // The rest — the browser, the run's log, the faces, the schedule — is
 // shared (src/core/, src/db/, src/faces/).
-export const SITES = { coomeet, flirtbees, mirami, luckycrush };
+export const SITES = { coomeet, flirtbees, mirami, luckycrush, flirtify };

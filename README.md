@@ -52,6 +52,11 @@ src/
       index.js           signing in, reading the recommendations a few times
       model.js           a recommended model → as the archive keeps her
       store.js           its tables (luckycrush_*)
+    flirtify/            its API and page data as a guest, no browser; links expire in 2 days
+      index.js           reading its feed, live rooms, age categories and every profile
+      api.js             requests, and SvelteKit's page data (__data.json)
+      model.js           a model, her profile and stories → as the archive keeps them
+      store.js           its tables (flirtify_*)
 models/                  the face models (InsightFace buffalo_s)
 supabase/                the database: shared/ and one folder per site
 test/                    unit tests (node --test)
