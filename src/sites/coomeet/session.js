@@ -38,7 +38,7 @@ const POPUP =
   "#application-wrapper > div.coomeet-chat > div.popup-overlay-wrapper > div.popup-overlay.visible > div > div.popup-overlay-content > div > div.ui-scroll-area > div > div.popup-component > div > div";
 const STEPS = {
   openMenu:
-    "#application-wrapper > div.coomeet-chat > div.chat-header > div.signed-in-user > div > div.ui-user-avatar > div",
+    "#screen-slot > div > div.gender-select__options > button.gender-option.gender-option--male > span.gender-option__icon > span.gender-option__ring",
   openSignIn: `${POPUP} > div > form > div.form-content > div.form-content__footer > div > span`,
   email: 'input[type="email"]',
   password: 'input[type="password"]',
@@ -57,7 +57,9 @@ export async function login(page, { email, password }) {
       await action(STEPS[name]);
       return true;
     } catch (error) {
-      console.warn(`⚠️ Login step "${name}" failed (${error.message}) — going on as a guest`);
+      console.warn(
+        `⚠️ Login step "${name}" failed (${error.message}) — going on as a guest`,
+      );
       return false;
     }
   };
