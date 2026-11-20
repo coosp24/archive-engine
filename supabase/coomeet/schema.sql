@@ -117,9 +117,16 @@ create index if not exists coomeet_names_first_seen_at_idx on public.coomeet_nam
 create index if not exists coomeet_names_name_trgm_idx
   on public.coomeet_names using gin (name gin_trgm_ops);
 create index if not exists coomeet_avatars_first_seen_at_idx on public.coomeet_avatars (first_seen_at);
-create index if not exists coomeet_stories_first_seen_at_idx on public.coomeet_stories (first_seen_at);
+-- Not on stories: the analysis page counts them from summaries (see
+-- analysis.sql), and on ~740k rows an index would only slow every insert.
+drop index if exists public.coomeet_stories_first_seen_at_idx;
 create index if not exists coomeet_models_peak_balance_idx
   on public.coomeet_models (peak_balance desc nulls last);
+-- The Premium list in its default order (highest peak, then newest story):
+-- only its own page of rows read, not every Premium model sorted.
+create index if not exists coomeet_models_premium_story_idx
+  on public.coomeet_models (peak_balance desc, current_story_published_at desc nulls last, id desc)
+  where peak_balance > 10;
 
 /* ===================== ACCESS ===================== */
 
