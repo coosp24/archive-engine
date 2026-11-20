@@ -13,11 +13,14 @@
 /* ===================== TABLES ===================== */
 
 create table if not exists public.coomeet_models (
-  -- coomeet's id: the account's creation time in tenths of a millisecond.
+  -- coomeet's id. Up to 2026-10-27 it was the account's creation time in
+  -- tenths of a millisecond (14 digits); accounts made since get 15-digit
+  -- ids that aren't times at all.
   id bigint primary key,
-  -- …so the creation date is the id itself (epoch ms = id / 10).
+  -- …so for a 14-digit id the creation date is the id itself (epoch ms =
+  -- id / 10), and for a newer one it isn't known (after 2026-10-27).
   account_created_at timestamptz
-    generated always as (to_timestamp(id / 10000.0)) stored,
+    generated always as (case when id < 100000000000000 then to_timestamp(id / 10000.0) end) stored,
   current_name text,
   current_avatar text,
   -- Her newest story, copied from coomeet_stories so the models list needs
@@ -38,6 +41,11 @@ create table if not exists public.coomeet_models (
   -- offline. The site calls her active while it's within the last hour.
   last_online_at timestamptz
 );
+
+-- A table made before the 15-digit ids gets the newer rule too.
+alter table public.coomeet_models
+  alter column account_created_at
+  set expression as (case when id < 100000000000000 then to_timestamp(id / 10000.0) end);
 
 -- Every name she has had, each once.
 create table if not exists public.coomeet_names (

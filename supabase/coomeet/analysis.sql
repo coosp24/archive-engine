@@ -147,6 +147,8 @@ $$;
 
 -- How many models' accounts were created each year (account_created_at is
 -- the id itself) in p_tz — any IANA time zone, e.g. 'Africa/Cairo' — all time.
+-- Accounts whose id isn't a time (made since 2026-10-28) are one row with no
+-- year.
 create or replace function public.coomeet_analysis_account_years(p_tz text default 'UTC')
 returns table (year int, models bigint)
 language plpgsql
