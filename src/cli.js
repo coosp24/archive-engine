@@ -12,8 +12,8 @@ import { SITES } from "./sites/index.js";
 //   --guest              run logged out, ignoring the accounts table
 //   --faces-minutes=N    after every site's stories, fingerprint faces for up
 //                        to N minutes in all, shared by the sites — on CI
-//                        each site's workflow sets its own (archive-<site>.yml),
-//                        2 by hand; 0 skips it
+//                        each site's workflow sets its own (archive-<site>.yml);
+//                        0 (the default for now) skips it
 //   --faces-only         only fingerprint faces (not logged as a run)
 //   --faces-limit=N      stop fingerprinting after N images a site, for
 //                        trying it out
@@ -70,7 +70,8 @@ async function indexAllFaces(sites, { budgetMs, limit }, done) {
 export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: OPTIONS, strict: true });
   const sites = sitesFrom(values.site);
-  const facesMinutes = count(values, "faces-minutes", process.env.CI === "true" ? 25 : 2);
+  // Faces are off unless asked for (2026-11-20): they were 25 on CI, 2 by hand.
+  const facesMinutes = count(values, "faces-minutes", 0);
   const faces = { budgetMs: facesMinutes * 60_000, limit: count(values, "faces-limit", Infinity) };
 
   if (values["faces-only"]) {
