@@ -1,0 +1,92 @@
+name: Archive a site
+
+# One site's run: its stories, then its faces for up to `faces_minutes`.
+# Called by each site's own workflow (archive-<site>.yml), which says which
+# site and how. With `next` set, starts that site's workflow when it's done,
+# whatever happened here: the hourly chain coomeet → flirtbees → mirami →
+# luckycrush → flirtify, which Supabase starts at minute 0
+# (supabase/shared/schedule.sql).
+on:
+  workflow_call:
+    inputs:
+      site:
+        type: string
+        required: true
+      # Reads the site's pages in a browser (Chrome under a virtual display);
+      # the others talk to its API and need neither.
+      browser:
+        type: boolean
+        default: false
+      faces_minutes:
+        type: number
+        default: 5
+      timeout_minutes:
+        type: number
+        default: 30
+      guest:
+        type: boolean
+        default: false
+      # The site whose workflow runs next, or "" to end the chain here.
+      next:
+        type: string
+        default: ""
+
+jobs:
+  archive:
+    name: ${{ inputs.site }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      # The login comes from the accounts table, read with this key.
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      # ubuntu-latest ships with Google Chrome preinstalled here
+      BROWSER_PATH: /usr/bin/google-chrome
+      # the real (non-headless) browser, under a virtual display
+      HEADLESS: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          # onnxruntime-node (face fingerprints) would otherwise download its
+          # GPU (CUDA) libraries on Linux: hundreds of MB the runner can't use.
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
+      - name: Install virtual display (Xvfb)
+        if: inputs.browser
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Archive ${{ inputs.site }}
+        env:
+          ARGS: --site=${{ inputs.site }} --faces-minutes=${{ inputs.faces_minutes }}${{ inputs.guest && ' --guest' || '' }}
+        run: |
+          if [ "${{ inputs.browser }}" = "true" ]; then
+            xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node . $ARGS
+          else
+            node . $ARGS
+          fi
+
+  # Hands over to the next site even when this one failed or timed out, so
+  # one broken site never stops the others.
+  next:
+    needs: archive
+    if: always() && inputs.next != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start ${{ inputs.next }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh workflow run "archive-${{ inputs.next }}.yml"
+          --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"
+          -f chain=true -f guest=${{ inputs.guest }}

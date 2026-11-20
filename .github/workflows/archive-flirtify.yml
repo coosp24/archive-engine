@@ -1,0 +1,37 @@
+name: Archive flirtify
+
+# flirtify: its feed, live rooms and every profile, from its API (~30-45 min).
+# The steps are in archive-site.yml. Supabase starts coomeet at minute 0 with
+# chain on (supabase/shared/schedule.sql); each site then starts the next.
+on:
+  workflow_dispatch: # the chain, or Run workflow in the Actions tab
+    inputs:
+      guest:
+        description: Run as a guest (not logged in)
+        type: boolean
+        default: false
+      chain:
+        description: Last in the chain (nothing runs after it)
+        type: boolean
+        default: false
+
+# One flirtify run at a time: a run still going is waited for, not raced.
+concurrency:
+  group: archive-flirtify
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write # to start the next site's workflow
+
+jobs:
+  archive:
+    uses: ./.github/workflows/archive-site.yml
+    with:
+      site: flirtify
+      browser: false
+      faces_minutes: 5
+      timeout_minutes: 55
+      guest: ${{ inputs.guest }}
+      next: ''
+    secrets: inherit

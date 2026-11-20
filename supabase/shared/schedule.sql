@@ -1,9 +1,12 @@
 -- ============================================================================
 -- Runs the archive every hour, on the hour, from Supabase.
 --
--- pg_cron calls public.dispatch_archive() at minute 0 of every hour, and it
--- asks GitHub Actions to run .github/workflows/archive.yml through pg_net —
--- the same request as pressing "Run workflow" in the repo's Actions tab.
+-- pg_cron calls public.dispatch_archive('coomeet') at minute 0 of every
+-- hour, and it asks GitHub Actions to run .github/workflows/archive-coomeet.yml
+-- with chain on, through pg_net — the same request as pressing "Run workflow"
+-- in the repo's Actions tab. Each site's run then starts the next one when
+-- it's done: coomeet → flirtbees → mirami → luckycrush → flirtify
+-- (.github/workflows/archive-site.yml).
 -- GitHub's own scheduled runs fire up to half an hour late (sometimes not at
 -- all), which is why the clock lives here instead.
 --
@@ -28,7 +31,12 @@
 create extension if not exists pg_cron;
 create extension if not exists pg_net with schema extensions;
 
-create or replace function public.dispatch_archive()
+-- The archive used to be one workflow (archive.yml) for every site.
+drop function if exists public.dispatch_archive();
+
+-- Starts one site's workflow (archive-<site>.yml); with p_chain, the sites
+-- after it follow, one after another.
+create or replace function public.dispatch_archive(p_site text default 'coomeet', p_chain boolean default true)
 returns bigint
 language plpgsql
 security definer
@@ -49,7 +57,7 @@ begin
   -- GitHub answers 204 when it accepts the run; the answer lands in
   -- net._http_response under the returned id.
   select net.http_post(
-    url     := 'https://api.github.com/repos/coosp24/archive-engine/actions/workflows/archive.yml/dispatches',
+    url     := 'https://api.github.com/repos/coosp24/archive-engine/actions/workflows/archive-' || p_site || '.yml/dispatches',
     headers := jsonb_build_object(
       'Authorization', 'Bearer ' || token,
       'Accept', 'application/vnd.github+json',
@@ -57,7 +65,7 @@ begin
       'User-Agent', 'archive-engine-scheduler',
       'Content-Type', 'application/json'
     ),
-    body    := jsonb_build_object('ref', 'main')
+    body    := jsonb_build_object('ref', 'main', 'inputs', jsonb_build_object('chain', p_chain::text))
   ) into request_id;
   return request_id;
 end;
@@ -65,16 +73,17 @@ $$;
 
 -- Only the cron job (running as the database owner) calls this — never the
 -- anon key or a signed-in visitor.
-revoke all on function public.dispatch_archive() from public, anon, authenticated;
+revoke all on function public.dispatch_archive(text, boolean) from public, anon, authenticated;
 
--- At minute 0 of every hour: 24 runs a day. Re-running this file replaces
--- the job rather than adding a second one.
-select cron.schedule('archive-hourly', '0 * * * *', 'select public.dispatch_archive()');
+-- At minute 0 of every hour, coomeet and then the rest of the chain. Re-running
+-- this file replaces the job rather than adding a second one.
+select cron.schedule('archive-hourly', '0 * * * *', 'select public.dispatch_archive(''coomeet'')');
 
 -- ----------------------------------------------------------------------------
 -- Handy afterwards:
 --
---   select public.dispatch_archive();         -- start a run right now
+--   select public.dispatch_archive();         -- start the whole chain now
+--   select public.dispatch_archive('mirami', false); -- one site, alone
 --
 --   select status_code, content, created      -- GitHub's answers (204 = ok)
 --   from net._http_response order by created desc limit 5;

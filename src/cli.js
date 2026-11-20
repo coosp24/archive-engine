@@ -11,8 +11,9 @@ import { SITES } from "./sites/index.js";
 //   --limit=N            stop after N stories, for trying it out
 //   --guest              run logged out, ignoring the accounts table
 //   --faces-minutes=N    after every site's stories, fingerprint faces for up
-//                        to N minutes in all, shared by the sites — 25 on CI,
-//                        where the hour allows it, 2 by hand; 0 skips it
+//                        to N minutes in all, shared by the sites — on CI
+//                        each site's workflow sets its own (archive-<site>.yml),
+//                        2 by hand; 0 skips it
 //   --faces-only         only fingerprint faces (not logged as a run)
 //   --faces-limit=N      stop fingerprinting after N images a site, for
 //                        trying it out

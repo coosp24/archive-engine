@@ -1,0 +1,37 @@
+name: Archive coomeet
+
+# coomeet: its feed and every known model's story, in a browser (~3 min).
+# The steps are in archive-site.yml. Supabase starts coomeet at minute 0 with
+# chain on (supabase/shared/schedule.sql); each site then starts the next.
+on:
+  workflow_dispatch: # the chain, or Run workflow in the Actions tab
+    inputs:
+      guest:
+        description: Run as a guest (not logged in)
+        type: boolean
+        default: false
+      chain:
+        description: Then start flirtbees, and so on down the chain
+        type: boolean
+        default: false
+
+# One coomeet run at a time: a run still going is waited for, not raced.
+concurrency:
+  group: archive-coomeet
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write # to start the next site's workflow
+
+jobs:
+  archive:
+    uses: ./.github/workflows/archive-site.yml
+    with:
+      site: coomeet
+      browser: true
+      faces_minutes: 10
+      timeout_minutes: 30
+      guest: ${{ inputs.guest }}
+      next: ${{ inputs.chain && 'flirtbees' || '' }}
+    secrets: inherit

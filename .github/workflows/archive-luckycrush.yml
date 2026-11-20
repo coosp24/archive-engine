@@ -1,0 +1,37 @@
+name: Archive luckycrush
+
+# luckycrush: a signed-up man's recommended models, in a browser.
+# The steps are in archive-site.yml. Supabase starts coomeet at minute 0 with
+# chain on (supabase/shared/schedule.sql); each site then starts the next.
+on:
+  workflow_dispatch: # the chain, or Run workflow in the Actions tab
+    inputs:
+      guest:
+        description: Run as a guest (not logged in)
+        type: boolean
+        default: false
+      chain:
+        description: Then start flirtify, and so on down the chain
+        type: boolean
+        default: false
+
+# One luckycrush run at a time: a run still going is waited for, not raced.
+concurrency:
+  group: archive-luckycrush
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write # to start the next site's workflow
+
+jobs:
+  archive:
+    uses: ./.github/workflows/archive-site.yml
+    with:
+      site: luckycrush
+      browser: true
+      faces_minutes: 3
+      timeout_minutes: 15
+      guest: ${{ inputs.guest }}
+      next: ${{ inputs.chain && 'flirtify' || '' }}
+    secrets: inherit

@@ -15,7 +15,7 @@ npm run check                     # lint and unit tests
 
 `.env` holds `SUPABASE_URL` and `SUPABASE_SECRET_KEY`, plus optionally `BROWSER_PATH`, `HEADLESS=true` and `ENV=development` (which logs every story). `src/cli.js` lists every option.
 
-On GitHub, `.github/workflows/archive.yml` runs it every hour, dispatched by Supabase (`supabase/shared/schedule.sql`). `check.yml` lints and tests every push.
+On GitHub every site has its own workflow, `.github/workflows/archive-<site>.yml`, each a few lines calling `archive-site.yml` (the steps: its stories, then its faces). Supabase starts `archive-coomeet.yml` at minute 0 of every hour (`supabase/shared/schedule.sql`), and each site starts the next when it's done, whether it succeeded or not: coomeet → flirtbees → mirami → luckycrush → flirtify. Run workflow on one site in the Actions tab runs that site alone, unless you tick `chain`. `check.yml` lints and tests every push.
 
 ## Layout
 
