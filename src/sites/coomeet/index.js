@@ -26,6 +26,12 @@ const FEED_RETRY_DELAY = 10000;
 // lets one go unanswered; asked again a few seconds later, it answers.
 const BATCH_TIMEOUT = 5000;
 const BATCH_ATTEMPTS = 6;
+// How many batches in a row of only stories already seen end the feed.
+const STALE_BATCHES = 8;
+// Models asked for their story at once, and how long each answer gets.
+// 25 at a time asked all ~19k in ~2.5 minutes, coomeet never slowing.
+const AUTHOR_CONCURRENCY = 25;
+const AUTHOR_TIMEOUT = 10000;
 
 const FEED_SCRIPT = await readFile(new URL("./feed.page.js", import.meta.url), "utf8");
 
@@ -74,6 +80,25 @@ async function nextBatch(page, toLook) {
   return { stories: batch.stories.map(shapeStory), lock: batch.lock };
 }
 
+// One model's current story: { story } (shaped) or { missing: true } when
+// she has none up; asked again while coomeet doesn't answer.
+async function authorStory(page, womanId) {
+  const reply = await retry(
+    async () => {
+      const r = await page.evaluate(
+        (id, timeout) => window.__cooscrap.authorStory(id, timeout),
+        womanId,
+        AUTHOR_TIMEOUT,
+      );
+      if (r.error && r.retry) throw new Error(r.error);
+      return r;
+    },
+    { attempts: 3, delayMs: 1000 },
+  );
+  if (reply.error) throw new Error(reply.error);
+  return reply.missing ? { missing: true } : { story: shapeStory(reply.story) };
+}
+
 function logStory(n, story, outcome) {
   line();
   console.log(`🎬 Story ${n}`);
@@ -117,11 +142,44 @@ async function archive({ page, account, limit, report }) {
   let found = 0;
   let ownerUnknown = 0;
   let unsaveable = 0;
+  // The models a story of this run came from, so they aren't asked again.
+  const seenModels = new Set();
+
+  // A story the run found (from the feed or asked for), counted and queued.
+  const take = (story) => {
+    const key = story.src ?? story.storyId;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found++;
+    if (!story.id) ownerUnknown++;
+    if (story.id) seenModels.add(story.id);
+    if (story.id && story.online) online.add(story.id);
+    // A story without her id can't be filed under anyone, nor one without
+    // its own id (the stories table's key), so those are only counted.
+    let outcome;
+    if (!story.id || !story.storyId) {
+      unsaveable++;
+      outcome = "⚠️  Not saved — model id or story id unknown";
+    } else {
+      outcome = saver.add(story) ? "📥 Queued to save" : "⏭️  Already archived — skipped";
+    }
+    if (isDev) logStory(found, story, outcome);
+  };
 
   try {
     await waitForFeed(page);
+    // Whether coomeet took the login: the steps going through doesn't mean
+    // it did (a wrong password still lets every step be done).
+    const who = await page.evaluate(() => window.__cooscrap.account()).catch(() => null);
+    if (who?.statusReg != null) {
+      const signedIn = Number(who.statusReg) > 0;
+      if (account && !signedIn) console.warn("⚠️ coomeet sees this session as a guest — the login didn't take");
+      console.log(`🪪 coomeet: ${signedIn ? "signed in" : "guest"} (statusReg ${who.statusReg}), story lock ${who.lock}s at start`);
+      report.guest = !signedIn;
+    }
     let toLook = [];
     let slowNoted = false;
+    let staleBatches = 0;
     for (;;) {
       const batch = await nextBatch(page, toLook);
       // A guest, or an account without a subscription, gets 20 stories a
@@ -139,34 +197,57 @@ async function archive({ page, account, limit, report }) {
         console.log("⏹️  coomeet has no more stories — end of the feed.");
         break;
       }
-      // A batch of nothing but stories already seen means the feed has
-      // started over (or the looks aren't landing) — stop rather than loop.
+      // Since Nov 2026 a limited session gets a shuffled draw from a small
+      // pool, so one batch of only stories already seen is common and
+      // doesn't mean the end; several in a row do — stop rather than loop.
       const fresh = batch.stories.filter((s) => !seen.has(s.src ?? s.storyId));
       if (!fresh.length) {
-        console.log("🔁 A batch of stories already seen — end of the feed.");
-        break;
-      }
-      for (const story of fresh) {
-        seen.add(story.src ?? story.storyId);
-        found++;
-        if (!story.id) ownerUnknown++;
-        if (story.id && story.online) online.add(story.id);
-        // A story without her id can't be filed under anyone, nor one
-        // without its own id (the stories table's key), so those are only
-        // counted.
-        let outcome;
-        if (!story.id || !story.storyId) {
-          unsaveable++;
-          outcome = "⚠️  Not saved — model id or story id unknown";
-        } else {
-          outcome = saver.add(story) ? "📥 Queued to save" : "⏭️  Already archived — skipped";
+        if (++staleBatches >= STALE_BATCHES) {
+          console.log(`🔁 ${STALE_BATCHES} batches in a row of stories already seen — end of the feed.`);
+          break;
         }
-        if (isDev) logStory(found, story, outcome);
+        toLook = batch.stories.filter((s) => s.id && s.storyId).map(({ id, storyId }) => ({ id, storyId }));
+        continue;
+      }
+      staleBatches = 0;
+      for (const story of fresh) {
+        take(story);
         if (limit && found >= limit) break;
       }
       if (limit && found >= limit) break;
       toLook = batch.stories.filter((s) => s.id && s.storyId).map(({ id, storyId }) => ({ id, storyId }));
     }
+    const fromFeed = found;
+    line();
+    console.log(`📰 From the feed: ${fromFeed} stories`);
+
+    // Then every model the archive knows and the feed didn't bring, asked
+    // for her current story directly — the feed's lock doesn't hold these
+    // back, so this is where most of the run's stories come from.
+    const toAsk = [...known.keys()].filter((id) => !seenModels.has(id));
+    const t0 = Date.now();
+    let next = 0;
+    let missing = 0;
+    let askFailed = 0;
+    const ask = async () => {
+      while (next < toAsk.length && !(limit && found >= limit)) {
+        const id = toAsk[next++];
+        let reply;
+        try {
+          reply = await authorStory(page, id);
+        } catch (error) {
+          askFailed++;
+          if (askFailed <= 3) console.warn(`⚠️ ${id}'s story: ${error.message}`);
+          continue;
+        }
+        if (reply.missing) missing++;
+        else take(reply.story);
+      }
+    };
+    await Promise.all(Array.from({ length: AUTHOR_CONCURRENCY }, ask));
+    console.log(
+      `👩 Asked ${toAsk.length} known models in ${Math.round((Date.now() - t0) / 1000)}s: ${found - fromFeed} stories, ${missing} with none up${askFailed ? `, ${askFailed} unanswered` : ""}`,
+    );
   } finally {
     // Whatever's still queued is saved even if the run stopped early.
     await saver.flush();

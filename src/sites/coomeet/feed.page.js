@@ -11,7 +11,11 @@
 //   StoryBatch { limit }        → data.stories: the next 20 at most
 //   StoryLook  { id, storyId }  → marks a story viewed (id is hers)
 // A batch keeps coming back the same until its stories are marked viewed,
-// which is what moves the feed on.
+// which is what moves the feed on. Since Nov 2026 coomeet locks the feed a
+// few batches in (to a shuffled pool of ~100), so each known model is also
+// asked for directly:
+//   GetAuthorStory { womanId }  → data.story: her current story, or
+//                                  data.code 402 when she has none up
 
 (() => {
   const SOCKET = "wspr.coomeet.com";
@@ -27,6 +31,8 @@
   // "Authorization" message: one sent before that is silently dropped.
   let socket = null;
   let authorized = false;
+  // What coomeet's "Authorization" said of the session, once it has.
+  let account = null;
   // The close code of the app's socket, if coomeet has closed it.
   let closeCode = null;
   window.WebSocket = new Proxy(window.WebSocket, {
@@ -47,7 +53,12 @@
         } catch {
           return;
         }
-        if (msg?.event?.Cmd === "Authorization" && ws === socket) authorized = true;
+        if (msg?.event?.Cmd === "Authorization" && ws === socket) {
+          authorized = true;
+          // Who coomeet takes the session for: statusReg is 0 for a guest.
+          const d = msg.data ?? {};
+          account = { statusReg: d.statusReg ?? null, lock: Number(d.storyLockExpirationTime) || 0 };
+        }
         waiting.get(msg?.event?.Cid)?.(msg);
       });
       return ws;
@@ -74,7 +85,7 @@
   // Why the connection isn't ready, for the log when it doesn't open in time.
   const socketStatus = () => {
     if (!socket) {
-      return document.querySelector(".gender-item")
+      return document.querySelector(".gender-option, .gender-item")
         ? "coomeet was still showing its gender screen"
         : "the app never opened its socket";
     }
@@ -109,11 +120,25 @@
     return { stories: reply.data.stories, lock: Number(reply.data.storyLockExpirationTime) || 0 };
   };
 
+  // One model's current story (`womanId`: her id), as GetAuthorStory gives
+  // it — not held back by the feed's story lock. Answers { story }, or
+  // { missing: true } when she has none up (code 402), or { error, retry }.
+  const authorStory = async (womanId, timeout) => {
+    if (!ready()) return { error: "coomeet's connection isn't ready", retry: true };
+    const reply = await request("GetAuthorStory", { womanId: Number(womanId) }, timeout);
+    if (reply.timeout) return { error: "coomeet didn't answer", retry: true };
+    if (reply.data?.story) return { story: reply.data.story };
+    if (reply.data?.code === 402) return { missing: true };
+    return { error: `unexpected reply: ${JSON.stringify(reply).slice(0, 200)}` };
+  };
+
   window.__cooscrap = {
+    authorStory,
     feedReady: ready,
     socketOpened: () => socket !== null,
     socketStatus,
     nextBatch,
     lookTimeouts: () => lookTimeouts,
+    account: () => account,
   };
 })();
