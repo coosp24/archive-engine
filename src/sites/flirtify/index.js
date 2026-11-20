@@ -5,7 +5,7 @@ import { retry, wait } from "../../core/retry.js";
 import { facesStore } from "../../db/faces.js";
 import { createApi } from "./api.js";
 import { mergeModel, shapeListed, shapeOperator, shapeProfile, shapeStory } from "./model.js";
-import { recordModels } from "./store.js";
+import { getCurrentStories, recordModels } from "./store.js";
 
 // flirtify (flirtify.com): its stories, its models' profiles, and what its
 // category pages say of them, read as a guest with no browser, and saved to
@@ -26,16 +26,33 @@ const PAGE_DELAY = 150;
 const ROOMS_PAGE = 36;
 // The category pages by age, 12 models a page, each with her age bracket's
 // youngest age as the archive keeps it. Every model with an age is in one,
-// and each comes with her country. Their order shifts while they're read
-// (one pass sees ~75% of a category), so each is read up to
-// CATEGORY_PASSES times, until it's all been seen; what a run misses, the
-// archive keeps from the runs before.
+// and each comes with her country. Their order shifts while they're read,
+// so one pass sees ~75% of a category; it's read once a run, not again until
+// all of it's been seen (three passes took ~15 minutes, most of a run). Age
+// bracket and country hardly change, and what a run misses the archive keeps
+// from the runs before, so whoever one pass misses is seen within an hour or
+// two.
 const AGE_GROUPS = { 18: 18, 20: 20, 30: 30, 40: 40, "over-50": 50 };
 const CATEGORY_PAGE = 12;
 const CATEGORY_MAX_PAGES = 1000;
-const CATEGORY_PASSES = 3;
+const CATEGORY_PASSES = 1;
 // Profiles read at once.
 const PROFILE_CONCURRENCY = 6;
+// A profile is read every run for a model who has posted since (her feed
+// story isn't her current one in the archive) or who's new; everyone else's
+// in turn, a share of them each hour, so each is read at least every
+// PROFILE_EVERY_HOURS. Her links last two days, so that keeps them fresh,
+// and what else a profile says rarely changes within hours. (Reading every
+// profile every run took ~25 of a run's ~27 minutes.)
+const PROFILE_EVERY_HOURS = 6;
+
+// Which hour of PROFILE_EVERY_HOURS a model's profile is read in: from her
+// id, so it's the same every day.
+function profileTurn(id) {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return h % PROFILE_EVERY_HOURS;
+}
 
 // A request tried again when it fails — a timeout, a 5xx, or flirtify
 // asking for a pause (429) — not when it's answered with something else.
@@ -172,7 +189,21 @@ async function archive({ account, limit, report }) {
     }
 
     const entries = [...models.entries()];
-    const profiles = await mapLimit(entries, PROFILE_CONCURRENCY, ([, m]) => readProfile(api, m.feed));
+    // Whose profile this run reads (see PROFILE_EVERY_HOURS): every one on a
+    // trial run, which has only a few.
+    const current = limit ? null : await getCurrentStories();
+    const turn = Math.floor(Date.now() / 3_600_000) % PROFILE_EVERY_HOURS;
+    const needsProfile = ([id, m]) =>
+      !current ||
+      !current.has(id) ||
+      (m.story?.storyId != null && m.story.storyId !== current.get(id)) ||
+      profileTurn(id) === turn;
+    let profilesRead = 0;
+    const profiles = await mapLimit(entries, PROFILE_CONCURRENCY, (entry) => {
+      if (!needsProfile(entry)) return { skipped: true };
+      profilesRead++;
+      return readProfile(api, entry[1].feed);
+    });
 
     const saver = createBatchSaver({ send: recordModels, describe: describeCounts, batchSize: 50 });
     const online = new Set();
@@ -182,9 +213,9 @@ async function archive({ account, limit, report }) {
     let unread = 0;
     let moreStories = 0;
     for (const [i, [id, m]] of entries.entries()) {
-      const { profile = null, gone: isGone } = profiles[i];
+      const { profile = null, gone: isGone, skipped } = profiles[i];
       if (isGone) gone++;
-      else if (!profile) unread++;
+      else if (!profile && !skipped) unread++;
       if (profile?.moreStories) moreStories++;
       const record = mergeModel({
         ...m,
@@ -224,6 +255,7 @@ async function archive({ account, limit, report }) {
     line();
     console.log(`🎞️  Stories found:   ${stories.size} (${feed.length} in the feed)`);
     console.log(`👥 Models:          ${models.size} (${categories.size} in the age categories, ${live.size} streaming)`);
+    console.log(`📇 Profiles read:   ${profilesRead} (new, posted since, or their turn: each every ${PROFILE_EVERY_HOURS}h)`);
     console.log(`💾 Saved:           ${stats.saved} models (every one: her links expire)`);
     console.log(`🆕 New models:      ${report.newModels}`);
     console.log(`🆕 New stories:     ${report.newStories}`);

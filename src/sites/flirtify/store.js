@@ -5,6 +5,25 @@ import supabase from "../../db/client.js";
 // another site's data never mixes with flirtify's. Its faces:
 // src/db/faces.js.
 
+// A single request returns at most this many rows (PostgREST's default cap).
+const PAGE = 1000;
+
+// Every model the archive has, by id, with her current story's id (null
+// when she has none): what tells the run who has posted since.
+export async function getCurrentStories() {
+  const current = new Map();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("flirtify_models")
+      .select("id, current_story_id")
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`Failed to load known models: ${error.message}`);
+    for (const m of data) current.set(m.id, m.current_story_id == null ? null : String(m.current_story_id));
+    if (data.length < PAGE) return current;
+  }
+}
+
 // Saves a batch of models as the run saw them (merged as in ./model.js),
 // each with her stories, in one round trip. Answers how many of each were
 // new: { model, name, avatar, story }.

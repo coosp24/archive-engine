@@ -231,8 +231,12 @@ begin
     country = coalesce(p->>'country', m.country),
     age_group = coalesce((p->>'age_group')::smallint, m.age_group),
     about = coalesce(p->>'about', m.about),
+    -- Only a list is read as one: a model without languages comes as JSON
+    -- null, which jsonb_array_elements_text refuses ("cannot extract
+    -- elements from a scalar") — and that failed her whole batch of 50.
     languages = coalesce(
-      (select array_agg(l) from jsonb_array_elements_text(p->'languages') l),
+      case when jsonb_typeof(p->'languages') = 'array'
+        then (select array_agg(l) from jsonb_array_elements_text(p->'languages') l) end,
       m.languages
     ),
     call_price_in_sec = coalesce((p->>'call_price_in_sec')::smallint, m.call_price_in_sec),
