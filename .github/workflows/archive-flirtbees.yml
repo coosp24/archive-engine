@@ -30,7 +30,8 @@ jobs:
     with:
       site: flirtbees
       browser: false
-      faces_minutes: 3
+      # Faces are off for now (2026-11-20); set the minutes back to turn them on.
+      faces_minutes: 0
       timeout_minutes: 15
       guest: ${{ inputs.guest }}
       next: ${{ inputs.chain && 'mirami' || '' }}

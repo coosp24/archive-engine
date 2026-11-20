@@ -26,12 +26,23 @@ export async function passIntro(page, timeout = 20000) {
       TERMS,
     )
     .catch(() => {});
-  if (await page.$(GENDER)) {
-    await page.click(GENDER);
+  if (await clickIfThere(page, GENDER)) {
     // The terms follow the gender choice.
     await page.waitForSelector(TERMS, { timeout }).catch(() => {});
   }
-  if (await page.$(TERMS)) await page.click(TERMS);
+  await clickIfThere(page, TERMS);
+}
+
+// Clicks `selector` if it's on the page, answering whether it did. A screen
+// can go away between being found and being clicked (the app closing it
+// itself), which isn't a failure: there's just nothing left to click.
+async function clickIfThere(page, selector) {
+  const element = await page.$(selector);
+  if (!element) return false;
+  return element.click().then(
+    () => true,
+    () => false,
+  );
 }
 
 // The login form in the new app (from Nov 2026): "Sign in" in the nav bar
@@ -87,7 +98,7 @@ export async function login(page, { email, password }) {
     (await step("openMenu", async (s) => {
       for (let attempt = 1; ; attempt++) {
         // The terms can show up seconds after the page loads, over it all.
-        if (await page.$(TERMS)) await page.click(TERMS).catch(() => {});
+        await clickIfThere(page, TERMS);
         await page.click(s);
         const opened = await page
           .waitForSelector(".auth-male", { visible: true, timeout: 3000 })
